@@ -36,10 +36,11 @@ class Component(ComponentBase):
 
         server_url = self._configuration.authentication.server_url
         resource_alias = self._configuration.source.resource_alias
+        limit = self._configuration.source.limit
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
 
-        client = SAPClient(server_url, username, password, verify=False)
+        client = SAPClient(server_url, username, password, limit, verify=False)
         sources = client.list_sources()
 
         for resource in resource_alias:

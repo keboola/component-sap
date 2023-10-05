@@ -7,12 +7,14 @@ class SapClientException(Exception):
     pass
 
 
+LIMIT = 10_000
+
+
 class SAPClient(HttpClient):
-    LIMIT = 10000
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
-    def __init__(self, server_url: str, username: str, password: str, verify: bool = True):
+    def __init__(self, server_url: str, username: str, password: str, limit: int = LIMIT, verify: bool = True):
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
@@ -20,6 +22,7 @@ class SAPClient(HttpClient):
                          status_forcelist=(503, 500))
 
         self.verify = verify
+        self.limit = limit
 
     def list_sources(self):
         r = self._get(self.DATA_SOURCES_ENDPOINT)
@@ -50,7 +53,7 @@ class SAPClient(HttpClient):
     def _fetch_paging(self, resource_alias, columns: list, page: int = 0):
         params = {
             "page": page if page else 0,
-            "limit": self.LIMIT
+            "limit": self.limit
         }
         while True:
             endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
@@ -73,7 +76,8 @@ class SAPClient(HttpClient):
             return [dict(zip(columns, row)) for row in rows]
         return []
 
-    def _get_columns(self, response):
+    @staticmethod
+    def _get_columns(response):
         try:
             columns = response["ENTITIES"][0]["COLUMNS"]
         except KeyError:

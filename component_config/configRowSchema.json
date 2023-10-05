@@ -24,6 +24,13 @@
           },
           "uniqueItems": true,
           "propertyOrder": 1
+        },
+        "limit": {
+          "type": "integer",
+          "title": "Limit",
+          "default": 10000,
+          "description": "You can use this field to set the limit for paging.",
+          "propertyOrder": 2
         }
       }
     }
