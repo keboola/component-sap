@@ -1,19 +1,41 @@
 {
   "type": "object",
-  "title": "extractor configuration",
-  "required": [
-    "print_hello"
-  ],
+  "title": "SAP Extractor configuration",
   "properties": {
-    "print_hello": {
-      "type": "boolean",
-      "title": "Print Hello",
-      "propertyOrder": 1
-    },
-    "debug": {
-      "type": "boolean",
-      "title": "Debug",
-      "propertyOrder": 2
+    "authentication": {
+      "type": "object",
+      "title": "Authentication",
+      "required": [
+        "server_url",
+        "username",
+        "#password"
+      ],
+      "propertyOrder": 1,
+      "properties": {
+        "server_url": {
+          "type": "string",
+          "title": "Server URL",
+          "description": "For example: http://s4demo.actum.cz:8000",
+          "propertyOrder": 1
+        },
+        "username": {
+          "type": "string",
+          "title": "Username",
+          "propertyOrder": 2
+        },
+        "#password": {
+          "type": "string",
+          "format": "password",
+          "title": "Password",
+          "propertyOrder": 3
+        },
+        "catalog_service_endpoint": {
+          "type": "string",
+          "title": "Catalog Service endpoint",
+          "description": "For example: /sap/opu/odata/iwfnd/CATALOGSERVICE;v=2/ServiceCollection?",
+          "propertyOrder": 4
+        }
+      }
     }
   }
 }

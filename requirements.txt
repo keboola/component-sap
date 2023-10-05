@@ -1,5 +1,8 @@
-keboola.component==1.4.0
+keboola.component==1.4.3
 keboola.utils
 keboola.http-client
 mock
 freezegun
+git+https://github.com/SgtMarmite/python-http-client.git@async-http-client
+aiolimiter==1.1.0 # should be included in async-http-client before going to production
+dataconf

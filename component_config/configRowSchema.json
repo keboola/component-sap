@@ -1,1 +1,37 @@
-{}
+{
+  "type": "object",
+  "title": "SAP Extractor configuration",
+  "properties": {
+    "source": {
+      "type": "object",
+      "title": "Source settings",
+      "propertyOrder": 1,
+      "properties": {
+        "resource_endpoint": {
+          "type": "string",
+          "title": "Resource endpoint",
+          "description": "Use this only if you do not have Catalog Service available. Example: /sap/opu/odata/ACTUM/SBOOK_CDS_TYPE1_SRV/SbookSet",
+          "propertyOrder": 1
+        },
+        "table_name": {
+          "type": "array",
+          "title": "List tables",
+          "format": "select",
+          "description": "Use this to list tables available to fetch.",
+          "items": {
+              "enum": [],
+              "type": "string"
+          },
+          "options": {
+            "async": {
+              "label": "List Tables",
+              "action": "listTables"
+            }
+          },
+          "uniqueItems": true,
+          "propertyOrder": 4
+        }
+      }
+    }
+  }
+}
