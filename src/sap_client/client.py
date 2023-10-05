@@ -1,4 +1,3 @@
-from urllib.parse import urljoin
 from http.client import HTTPException
 
 from keboola.http_client import HttpClient
