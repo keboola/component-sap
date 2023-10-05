@@ -41,7 +41,11 @@ class Component(ComponentBase):
         password = self._configuration.authentication.pswd_password
 
         client = SAPClient(server_url, username, password, limit, verify=False)
-        sources = client.list_sources()
+
+        try:
+            sources = client.list_sources()
+        except SapClientException as e:
+            raise UserException(f"Cannot list SAP resources, exception: {e}")
 
         for resource in resource_alias:
 

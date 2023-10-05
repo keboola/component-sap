@@ -1,4 +1,4 @@
-from http.client import HTTPException
+from requests.exceptions import RetryError, HTTPError, ConnectTimeout
 
 from keboola.http_client import HttpClient
 
@@ -89,11 +89,15 @@ class SAPClient(HttpClient):
         if params is None:
             params = {}
 
-        r = self.get_raw(endpoint, params=params, verify=self.verify)
         try:
+            r = self.get_raw(endpoint, params=params, verify=self.verify)
             r.raise_for_status()
-        except HTTPException as e:
+        except RetryError as e:
+            raise SapClientException(f"All retries to {endpoint} failed, exception: {e}") from e
+        except HTTPError as e:
             raise SapClientException(f"Request to {endpoint} failed, exception: {e}") from e
+        except ConnectTimeout:
+            raise SapClientException(f"Connection timeout occured for {endpoint}. Server is probably offline.")
 
         return r.json()
 
