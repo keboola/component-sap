@@ -54,7 +54,7 @@ class Authentication(ConfigurationBase):
 
 @dataclass
 class Source(ConfigurationBase):
-    resource_alias: Optional[str]
+    resource_alias: List[str]
 
 
 @dataclass

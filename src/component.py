@@ -42,22 +42,24 @@ class Component(ComponentBase):
         client = SAPClient(server_url, username, password, verify=False)
         sources = client.list_sources()
 
-        is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
+        for resource in resource_alias:
 
-        if is_source_present:
-            logging.info(f"{resource_alias} resource will be fetched.")
-        else:
-            raise UserException(f"{resource_alias} resource is not available.")
+            is_source_present = any(s['SOURCE_ALIAS'] == resource for s in sources)
 
-        out_table = self.create_out_table_definition(resource_alias)
-        with ElasticDictWriter(out_table.full_path, []) as wr:
-            try:
-                for page in client.fetch(resource_alias):
-                    wr.writerows(page)
-            except SapClientException as e:
-                raise UserException(f"Cannot fetch data from resource {resource_alias}, exception: {e}") from e
+            if is_source_present:
+                logging.info(f"{resource} resource will be fetched.")
+            else:
+                raise UserException(f"{resource_alias} resource is not available.")
 
-        self.write_manifest(out_table)
+            out_table = self.create_out_table_definition(resource)
+            with ElasticDictWriter(out_table.full_path, []) as wr:
+                try:
+                    for page in client.fetch(resource):
+                        wr.writerows(page)
+                except SapClientException as e:
+                    raise UserException(f"Cannot fetch data from resource {resource}, exception: {e}") from e
+
+            self.write_manifest(out_table)
 
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
