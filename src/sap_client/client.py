@@ -24,9 +24,15 @@ class SAPClient(HttpClient):
     def list_sources(self):
         r = self._get(self.DATA_SOURCES_ENDPOINT)
         sources = r.get("DATA_SOURCES", None)
+
         if sources:
-            sources = [{'SOURCE_ALIAS': source['SOURCE_ALIAS'], 'SOURCE_TEXT': source['SOURCE_TEXT'],
-                        'PAGING': source['PAGING']} for source in sources]
+            sources = [
+                {'SOURCE_ALIAS': source['SOURCE_ALIAS'],
+                 'SOURCE_TEXT': source['SOURCE_TEXT'],
+                 'PAGING': source['PAGING'],
+                 'SOURCE_TYPE': source['SOURCE_TYPE'],
+                 'DELTA': source['DELTA']
+                 } for source in sources]
 
         return sources
 

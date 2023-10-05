@@ -28,12 +28,6 @@
           "format": "password",
           "title": "Password",
           "propertyOrder": 3
-        },
-        "catalog_service_endpoint": {
-          "type": "string",
-          "title": "Catalog Service endpoint",
-          "description": "For example: /sap/opu/odata/iwfnd/CATALOGSERVICE;v=2/ServiceCollection?",
-          "propertyOrder": 4
         }
       }
     }

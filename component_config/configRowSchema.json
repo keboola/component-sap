@@ -24,12 +24,12 @@
           },
           "options": {
             "async": {
-              "label": "List Tables",
-              "action": "listTables"
+              "label": "List Resources",
+              "action": "listResources"
             }
           },
           "uniqueItems": true,
-          "propertyOrder": 4
+          "propertyOrder": 2
         }
       }
     }

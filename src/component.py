@@ -4,9 +4,10 @@ Template Component main class.
 """
 import logging
 
-from keboola.component.base import ComponentBase
+from keboola.component.base import ComponentBase, sync_action
 from keboola.csvwriter import ElasticDictWriter
 from keboola.component.exceptions import UserException
+from keboola.component.sync_actions import SelectElement
 
 from sap_client.client import SAPClient, SapClientException
 from configuration import Configuration
@@ -61,6 +62,25 @@ class Component(ComponentBase):
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
         self._configuration: Configuration = Configuration.load_from_dict(self.configuration.parameters)
+
+    @sync_action("listResources")
+    def list_resources(self) -> list[SelectElement]:
+        self._init_configuration()
+
+        server_url = self._configuration.authentication.server_url
+        username = self._configuration.authentication.username
+        password = self._configuration.authentication.pswd_password
+
+        client = SAPClient(server_url, username, password, verify=False)
+        sources = client.list_sources()
+
+        return [
+            SelectElement(
+                label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}",
+                value=s['SOURCE_ALIAS']
+            )
+            for s in sources
+        ]
 
 
 """
