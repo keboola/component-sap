@@ -50,12 +50,11 @@ class Authentication(ConfigurationBase):
     server_url: str
     username: str
     pswd_password: str
-    catalog_service_endpoint: Optional[str]
 
 
 @dataclass
 class Source(ConfigurationBase):
-    resource_endpoint: Optional[str]
+    resource_alias: Optional[str]
 
 
 @dataclass
