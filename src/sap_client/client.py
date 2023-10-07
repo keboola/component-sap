@@ -29,6 +29,7 @@ class SAPClient(AsyncHttpClient):
         self.destination = destination
         self.verify = verify
         self.limit = limit
+        self.stop = False
 
     async def list_sources(self):
         r = await self._get(self.DATA_SOURCES_ENDPOINT)
@@ -74,8 +75,6 @@ class SAPClient(AsyncHttpClient):
             output_filename = os.path.join(self.destination, f"{name}_{uuid.uuid4()}.json")
             with open(output_filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, ensure_ascii=False, indent=4)
-        else:
-            raise SapClientException(f"Results for {name} were empty.")
 
     async def _fetch_paging(self, resource_alias: str, columns: list, page: int = 0):
         params = {
@@ -83,24 +82,33 @@ class SAPClient(AsyncHttpClient):
             "limit": self.limit
         }
         tasks = []
-        while True:
-            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-            r = await self._get(endpoint, params=params)
-            entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
-            if entities:
-                rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
-                if rows:
 
-                    task = asyncio.ensure_future(self._process_result(rows, columns))
-                    tasks.append(task)
+        while not self.stop:
+            for _ in range(9):
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+                tasks.append(self._get_and_process(endpoint, params.copy(), columns))
 
-                    params["page"] += 1
-                else:
-                    break
+                params["page"] += 1
 
-        results = await asyncio.gather(*tasks)
-        for result in results:
-            yield result
+            # Wait for all tasks to complete and iterate over results.
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                yield result
+
+            tasks.clear()
+
+    # Separate _get and _process_result logic into its own async function.
+    async def _get_and_process(self, endpoint, params, columns):
+        r = await self._get(endpoint, params=params)
+        entities = r.get("DATA_SOURCE", {}).get("ENTITIES", [])
+        if entities:
+            rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            if rows:
+                return await self._process_result(rows, columns)
+            else:
+                self.stop = True
+
+        return None
 
     @staticmethod
     async def _process_result(rows: list[dict], columns: list):
