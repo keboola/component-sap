@@ -7,14 +7,14 @@ class SapClientException(Exception):
     pass
 
 
-LIMIT = 10_000
+DEFAULT_LIMIT = 10_000
 
 
 class SAPClient(HttpClient):
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
-    def __init__(self, server_url: str, username: str, password: str, limit: int = LIMIT, verify: bool = True):
+    def __init__(self, server_url: str, username: str, password: str, limit: int = DEFAULT_LIMIT, verify: bool = True):
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
