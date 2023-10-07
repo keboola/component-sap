@@ -10,7 +10,6 @@
         "resource_alias": {
           "type": "string",
           "title": "List Resources",
-          "format": "select",
           "description": "Use this to list tables available to fetch.",
           "options": {
             "async": {
