@@ -45,7 +45,7 @@ class Component(ComponentBase):
             end_time = time.time()
             runtime = end_time - start_time
             logging.info(f"Fetched data in {runtime:.2f} seconds")
-        except Exception as e:
+        except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
         for json_file in os.listdir(temp_dir):

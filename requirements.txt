@@ -5,3 +5,4 @@ keboola.csvwriter
 mock
 freezegun
 dataconf
+aiolimiter # not included yet in async client
