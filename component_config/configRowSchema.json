@@ -18,7 +18,11 @@
               "action": "listResources"
             }
           },
-          "uniqueItems": true,
+          "items": {
+              "enum": [],
+              "type": "string"
+          },
+          "enum": [],
           "propertyOrder": 1
         },
         "limit": {
