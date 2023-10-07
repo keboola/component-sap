@@ -1,6 +1,10 @@
-from requests.exceptions import RetryError, HTTPError, ConnectTimeout
+import asyncio
+import json
+import logging
+import os
+import uuid
 
-from keboola.http_client import HttpClient
+from keboola.http_client import AsyncHttpClient
 
 
 class SapClientException(Exception):
@@ -10,22 +14,24 @@ class SapClientException(Exception):
 DEFAULT_LIMIT = 10_000
 
 
-class SAPClient(HttpClient):
+class SAPClient(AsyncHttpClient):
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
-    def __init__(self, server_url: str, username: str, password: str, limit: int = DEFAULT_LIMIT, verify: bool = True):
+    def __init__(self, server_url: str, username: str, password: str, destination: str,  limit: int = DEFAULT_LIMIT,
+                 verify: bool = True):
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
-        super().__init__(server_url, auth=auth, default_http_header=default_headers, max_retries=2,
-                         status_forcelist=(503, 500))
+        super().__init__(server_url, auth=auth, default_headers=default_headers, retries=2,
+                         retry_status_codes=[503, 500], verify_ssl=verify)
 
+        self.destination = destination
         self.verify = verify
         self.limit = limit
 
-    def list_sources(self):
-        r = self._get(self.DATA_SOURCES_ENDPOINT)
+    async def list_sources(self):
+        r = await self._get(self.DATA_SOURCES_ENDPOINT)
         sources = r.get("DATA_SOURCES", None)
 
         if sources:
@@ -39,37 +45,70 @@ class SAPClient(HttpClient):
 
         return sources
 
-    def fetch(self, resource_alias):
-        metadata = self._get_resource_metadata(resource_alias)
-
-        columns = self._get_columns(metadata)
-        # The following is just a temporary workaround for PAGING not being displayed right in the metadata
-        if metadata.get("PAGING") is True:
-            for page in self._fetch_paging(resource_alias, columns):
-                yield page
+    async def fetch(self, resource_alias):
+        sources = await self.list_sources()
+        is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
+        if is_source_present:
+            logging.info(f"{resource_alias} resource will be fetched.")
         else:
-            yield self._fetch_full(resource_alias, columns)
+            raise SapClientException(f"{resource_alias} resource is not available.")
 
-    def _fetch_paging(self, resource_alias, columns: list, page: int = 0):
+        metadata = await self._get_resource_metadata(resource_alias)
+        columns = self._get_columns(metadata)
+
+        if metadata.get("PAGING") is True:
+
+            logging.info(f"Resource {resource_alias} supports paging.")
+
+            async for page in self._fetch_paging(resource_alias, columns):
+                await self._store_results(page, resource_alias)
+        else:
+            await self._fetch_full(resource_alias, columns)
+
+    async def _store_results(self, results: list[dict], name: str) -> None:
+        if not self.destination:
+            logging.info("Destination not set, results will not be stored.")
+            return
+
+        if results:
+            output_filename = os.path.join(self.destination, f"{name}_{uuid.uuid4()}.json")
+            with open(output_filename, "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, indent=4)
+        else:
+            raise SapClientException(f"Results for {name} were empty.")
+
+    async def _fetch_paging(self, resource_alias: str, columns: list, page: int = 0):
         params = {
-            "page": page if page else 0,
+            "page": page if page else 1,
             "limit": self.limit
         }
+        tasks = []
         while True:
             endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-            r = self._get(endpoint, params=params)
+            r = await self._get(endpoint, params=params)
             entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
             if entities:
                 rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
                 if rows:
-                    yield [dict(zip(columns, row)) for row in rows]
+
+                    task = asyncio.ensure_future(self._process_result(rows, columns))
+                    tasks.append(task)
+
                     params["page"] += 1
                 else:
                     break
 
-    def _fetch_full(self, resource_alias: str, columns: list):
+        results = await asyncio.gather(*tasks)
+        for result in results:
+            yield result
+
+    @staticmethod
+    async def _process_result(rows: list[dict], columns: list):
+        return [dict(zip(columns, row)) for row in rows]
+
+    async def _fetch_full(self, resource_alias: str, columns: list):
         endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-        r = self._get(endpoint)
+        r = await self._get(endpoint)
         entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
         if entities:
             rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
@@ -85,28 +124,18 @@ class SAPClient(HttpClient):
 
         return [item['COLUMN_ALIAS'] for item in sorted(columns, key=lambda x: x['POSITION'])]
 
-    def _get(self, endpoint: str, params=None) -> dict:
+    async def _get(self, endpoint: str, params=None) -> dict:
         if params is None:
             params = {}
 
-        try:
-            r = self.get_raw(endpoint, params=params, verify=self.verify)
-            r.raise_for_status()
-        except RetryError as e:
-            raise SapClientException(f"All retries to {endpoint} failed, exception: {e}") from e
-        except HTTPError as e:
-            raise SapClientException(f"Request to {endpoint} failed, exception: {e}") from e
-        except ConnectTimeout:
-            raise SapClientException(f"Connection timeout occured for {endpoint}. Server is probably offline.")
-
-        return r.json()
+        return await self.get(endpoint, params=params)
 
     @staticmethod
     def _join_url_parts(*parts):
         return "/".join(str(part).strip("/") for part in parts)
 
-    def _get_resource_metadata(self, resource):
+    async def _get_resource_metadata(self, resource):
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
-        r = self._get(endpoint)
+        r = await self._get(endpoint)
         source = r.get("DATA_SOURCE", None)
         return source

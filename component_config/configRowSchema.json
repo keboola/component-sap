@@ -8,14 +8,10 @@
       "propertyOrder": 1,
       "properties": {
         "resource_alias": {
-          "type": "array",
+          "type": "string",
           "title": "List Resources",
           "format": "select",
           "description": "Use this to list tables available to fetch.",
-          "items": {
-              "enum": [],
-              "type": "string"
-          },
           "options": {
             "async": {
               "label": "List Resources",
