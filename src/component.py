@@ -1,4 +1,9 @@
+import asyncio
+import json
 import logging
+import os
+import shutil
+import time
 
 from keboola.component.base import ComponentBase, sync_action
 from keboola.csvwriter import ElasticDictWriter
@@ -27,31 +32,35 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
 
-        client = SAPClient(server_url, username, password, limit, verify=False)
+        temp_dir = os.path.join(self.data_folder_path, "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        client = SAPClient(server_url, username, password, temp_dir, limit, verify=False)
+
+        out_table = self.create_out_table_definition(resource_alias)
 
         try:
-            sources = client.list_sources()
+            start_time = time.time()
+            asyncio.run(client.fetch(resource_alias))
+            end_time = time.time()
+            runtime = end_time - start_time
+            logging.info(f"Fetched data in {runtime:.2f} seconds")
         except SapClientException as e:
-            raise UserException(f"Cannot list SAP resources, exception: {e}")
+            raise UserException(f"An error occurred while fetching resource: {e}")
 
-        for resource in resource_alias:
-
-            is_source_present = any(s['SOURCE_ALIAS'] == resource for s in sources)
-
-            if is_source_present:
-                logging.info(f"{resource} resource will be fetched.")
-            else:
-                raise UserException(f"{resource_alias} resource is not available.")
-
-            out_table = self.create_out_table_definition(resource)
+        for json_file in os.listdir(temp_dir):
             with ElasticDictWriter(out_table.full_path, []) as wr:
-                try:
-                    for page in client.fetch(resource):
-                        wr.writerows(page)
-                except SapClientException as e:
-                    raise UserException(f"Cannot fetch data from resource {resource}, exception: {e}") from e
+                wr.writeheader()
+                json_file_path = os.path.join(temp_dir, json_file)
+                with open(json_file_path, 'r') as file:
+                    content = json.load(file)
+                    for row in content:
+                        wr.writerow(row)
 
-            self.write_manifest(out_table)
+        self.write_manifest(out_table)
+
+        # Clean temp folder (for local runs)
+        shutil.rmtree(temp_dir)
 
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
@@ -65,8 +74,8 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
 
-        client = SAPClient(server_url, username, password, verify=False)
-        sources = client.list_sources()
+        client = SAPClient(server_url, username, password, "", verify=False)
+        sources = asyncio.run(client.list_sources())
 
         return [
             SelectElement(
