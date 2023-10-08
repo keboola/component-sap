@@ -11,6 +11,7 @@ class SapClientException(Exception):
     pass
 
 
+BATCH_SIZE = 10
 DEFAULT_LIMIT = 10_000
 
 
@@ -30,6 +31,7 @@ class SAPClient(AsyncHttpClient):
         self.verify = verify
         self.limit = limit
         self.stop = False
+        self.metadata = {}
 
     async def list_sources(self):
         r = await self._get(self.DATA_SOURCES_ENDPOINT)
@@ -55,16 +57,49 @@ class SAPClient(AsyncHttpClient):
             raise SapClientException(f"{resource_alias} resource is not available.")
 
         metadata = await self._get_resource_metadata(resource_alias)
-        columns = self._get_columns(metadata)
+        self.metadata = self.parse_metadata(metadata)
 
         if metadata.get("PAGING") is True:
-
             logging.info(f"Resource {resource_alias} supports paging.")
-
-            async for page in self._fetch_paging(resource_alias, columns):
+            async for page in self._fetch_paging(resource_alias):
                 await self._store_results(page, resource_alias)
         else:
-            await self._fetch_full(resource_alias, columns)
+            logging.info(f"Resource {resource_alias} does not support paging. "
+                         f"The component will try to fetch the data in one request.")
+            await self._fetch_full(resource_alias)
+
+    async def _fetch_paging(self, resource_alias: str, page: int = 0):
+        params = {
+            "page": page if page else 1,
+            "limit": self.limit
+        }
+        tasks = []
+
+        while not self.stop:
+            for _ in range(BATCH_SIZE-1):
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+                tasks.append(self._get_and_process(endpoint, params.copy()))
+
+                params["page"] += 1
+
+            # Wait for all tasks to complete and iterate over results.
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                yield result
+
+            tasks.clear()
+
+    async def _fetch_full(self, resource_alias: str):
+        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+        r = await self._get(endpoint)
+        entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
+        if entities:
+            columns_specification = entities[0].get("COLUMNS")
+            columns = self._get_columns(columns_specification)
+            rows = entities[0].get("ROWS")  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            if rows:
+                return self._process_result(rows, columns)
+        return []
 
     async def _store_results(self, results: list[dict], name: str) -> None:
         if not self.destination:
@@ -76,61 +111,35 @@ class SAPClient(AsyncHttpClient):
             with open(output_filename, "w", encoding="utf-8") as f:
                 json.dump(results, f, ensure_ascii=False, indent=4)
 
-    async def _fetch_paging(self, resource_alias: str, columns: list, page: int = 0):
-        params = {
-            "page": page if page else 1,
-            "limit": self.limit
-        }
-        tasks = []
-
-        while not self.stop:
-            for _ in range(9):
-                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-                tasks.append(self._get_and_process(endpoint, params.copy(), columns))
-
-                params["page"] += 1
-
-            # Wait for all tasks to complete and iterate over results.
-            results = await asyncio.gather(*tasks)
-            for result in results:
-                yield result
-
-            tasks.clear()
-
-    # Separate _get and _process_result logic into its own async function.
-    async def _get_and_process(self, endpoint, params, columns):
+    async def _get_and_process(self, endpoint, params):
+        """Helper method for async processing used with resources that support paging."""
         r = await self._get(endpoint, params=params)
-        entities = r.get("DATA_SOURCE", {}).get("ENTITIES", [])
+        data_source = r.get("DATA_SOURCE", {})
+        entities = data_source.get("ENTITIES", [])
+
         if entities:
-            rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            columns_specification = entities[0].get("COLUMNS")
+            columns = self._get_columns(columns_specification)
+            rows = entities[0].get("ROWS")  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
             if rows:
-                return await self._process_result(rows, columns)
+                return self._process_result(rows, columns)
             else:
                 self.stop = True
 
         return None
 
+    async def _get_resource_metadata(self, resource):
+        endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
+        r = await self._get(endpoint)
+        return r.get("DATA_SOURCE", None)
+
     @staticmethod
-    async def _process_result(rows: list[dict], columns: list):
+    def _process_result(rows: list[dict], columns: list):
         return [dict(zip(columns, row)) for row in rows]
 
-    async def _fetch_full(self, resource_alias: str, columns: list):
-        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-        r = await self._get(endpoint)
-        entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
-        if entities:
-            rows = entities[0]["ROWS"]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
-            return [dict(zip(columns, row)) for row in rows]
-        return []
-
     @staticmethod
-    def _get_columns(response):
-        try:
-            columns = response["ENTITIES"][0]["COLUMNS"]
-        except KeyError:
-            raise SapClientException(f"Column metadata are not available, cannot store data. Response: {response}")
-
-        return [item['COLUMN_ALIAS'] for item in sorted(columns, key=lambda x: x['POSITION'])]
+    def _get_columns(columns_specification: list):
+        return [item['COLUMN_ALIAS'] for item in sorted(columns_specification, key=lambda x: x['POSITION'])]
 
     async def _get(self, endpoint: str, params=None) -> dict:
         if params is None:
@@ -142,8 +151,11 @@ class SAPClient(AsyncHttpClient):
     def _join_url_parts(*parts):
         return "/".join(str(part).strip("/") for part in parts)
 
-    async def _get_resource_metadata(self, resource):
-        endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
-        r = await self._get(endpoint)
-        source = r.get("DATA_SOURCE", None)
-        return source
+    @staticmethod
+    def get_ordered_columns(columns_specification: list):
+        sorted_columns = sorted(columns_specification, key=lambda x: x['POSITION'])
+        return {col['COLUMN_ALIAS']: col for col in sorted_columns}
+
+    def parse_metadata(self, metadata: dict):
+        entity = metadata['ENTITIES'][0]
+        return self.get_ordered_columns(entity['COLUMNS'])

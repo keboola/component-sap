@@ -11,6 +11,7 @@ from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
 
 from sap_client.client import SAPClient, SapClientException
+from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
 from configuration import Configuration
 
 
@@ -57,10 +58,26 @@ class Component(ComponentBase):
                     for row in content:
                         wr.writerow(row)
 
+        out_table = self.add_column_metadata(client, out_table)
+
         self.write_manifest(out_table)
 
         # Clean temp folder (for local runs)
         shutil.rmtree(temp_dir)
+
+    @staticmethod
+    def add_column_metadata(client, out_table):
+        for column in client.metadata:
+            col_md = client.metadata.get(column)
+            datatype = SAP_TO_SNOWFLAKE_MAP[col_md.get("TYPE")]
+            if datatype in ["STRING", "INTEGER", "NUMERIC"]:
+                length = str(col_md.get("LENGTH"))
+            else:
+                length = None
+            out_table.table_metadata.add_column_data_type(column=column,
+                                                          data_type=datatype,
+                                                          length=length)
+        return out_table
 
     def _init_configuration(self) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
