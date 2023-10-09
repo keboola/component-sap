@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import shutil
-import time
 
 from keboola.component.base import ComponentBase, sync_action
 from keboola.csvwriter import ElasticDictWriter
@@ -21,12 +20,14 @@ class Component(ComponentBase):
     def __init__(self):
         super().__init__()
         self._configuration: Configuration
+        self.state = None
 
     def run(self):
         """
         Main execution code
         """
         self._init_configuration()
+        self.state = self.get_state_file()
 
         server_url = self._configuration.authentication.server_url
         resource_alias = self._configuration.source.resource_alias
@@ -37,37 +38,38 @@ class Component(ComponentBase):
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
 
+        statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
+
         client = SAPClient(server_url, username, password, temp_dir, limit, verify=False)
 
         out_table = self.create_out_table_definition(resource_alias)
 
         try:
-            start_time = time.time()
             asyncio.run(client.fetch(resource_alias))
-            end_time = time.time()
-            runtime = end_time - start_time
-            logging.info(f"Fetched data in {runtime:.2f} seconds")
         except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
         for json_file in os.listdir(temp_dir):
-            with ElasticDictWriter(out_table.full_path, []) as wr:
+            with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
                 wr.writeheader()
                 json_file_path = os.path.join(temp_dir, json_file)
                 with open(json_file_path, 'r') as file:
                     content = json.load(file)
                     for row in content:
-                        wr.writerow(row)
+                        wr.writerow(self._ensure_proper_column_names(row))
 
         out_table = self.add_column_metadata(client, out_table)
-
         self.write_manifest(out_table)
+
+        self.state.setdefault(resource_alias, {})["columns"] = wr.fieldnames
+        self.write_state_file(self.state)
 
         # Clean temp folder (for local runs)
         shutil.rmtree(temp_dir)
 
     @staticmethod
     def add_column_metadata(client: SAPClient, out_table: TableDefinition):
+        # TODO: How does adding metadata act when not all columns have metadata set?
         for column in client.metadata:
             col_md = client.metadata.get(column)
             datatype = SAP_TO_SNOWFLAKE_MAP[col_md.get("TYPE")]
@@ -80,17 +82,35 @@ class Component(ComponentBase):
                                                           length=length)
         return out_table
 
-    def _init_configuration(self, sync_action: bool = False) -> None:
-        if not sync_action:
+    def _init_configuration(self, sync_act: bool = False) -> None:
+        if not sync_act:
             self._configuration = Configuration.load_from_dict(self.configuration.parameters)
             self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
         else:
             self._configuration = SyncActionConfiguration.load_from_dict(self.configuration.parameters)
             self.validate_configuration_parameters(SyncActionConfiguration.get_dataclass_required_parameters())
 
+    @staticmethod
+    def _ensure_proper_column_names(original_dict):
+        """
+        Transforms dictionary keys by removing a leading '/' character and replacing
+        other '/' characters with '_'.
+
+        Parameters:
+        - original_dict (dict): The original dictionary with keys to transform.
+
+        Returns:
+        dict: A new dictionary with transformed keys.
+        """
+        transformed_dict = {}
+        for key, value in original_dict.items():
+            new_key = key.lstrip('/').replace('/', '_')
+            transformed_dict[new_key] = value
+        return transformed_dict
+
     @sync_action("listResources")
     def list_resources(self) -> list[SelectElement]:
-        self._init_configuration(sync_action=True)
+        self._init_configuration(sync_act=True)
 
         server_url = self._configuration.authentication.server_url
         username = self._configuration.authentication.username
