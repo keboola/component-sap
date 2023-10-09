@@ -77,7 +77,7 @@ class SAPClient(AsyncHttpClient):
         tasks = []
 
         while not self.stop:
-            for _ in range(BATCH_SIZE-1):
+            for _ in range(BATCH_SIZE):
                 endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
                 tasks.append(self._get_and_process(endpoint, params.copy()))
 
