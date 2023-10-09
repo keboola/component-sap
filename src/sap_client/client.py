@@ -12,7 +12,7 @@ class SapClientException(Exception):
     pass
 
 
-BATCH_SIZE = 5
+BATCH_SIZE = 4
 DEFAULT_LIMIT = 10_000
 
 

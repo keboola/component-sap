@@ -49,9 +49,9 @@ class Component(ComponentBase):
         except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
-        for json_file in os.listdir(temp_dir):
-            with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
-                wr.writeheader()
+        with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
+            wr.writeheader()
+            for json_file in os.listdir(temp_dir):
                 json_file_path = os.path.join(temp_dir, json_file)
                 with open(json_file_path, 'r') as file:
                     content = json.load(file)
