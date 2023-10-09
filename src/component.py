@@ -49,23 +49,29 @@ class Component(ComponentBase):
         except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
-        with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
-            wr.writeheader()
-            for json_file in os.listdir(temp_dir):
-                json_file_path = os.path.join(temp_dir, json_file)
-                with open(json_file_path, 'r') as file:
-                    content = json.load(file)
-                    for row in content:
-                        wr.writerow(self._ensure_proper_column_names(row))
+        files = os.listdir(temp_dir)
 
-        out_table = self.add_column_metadata(client, out_table)
-        self.write_manifest(out_table)
+        if files:
 
-        self.state.setdefault(resource_alias, {})["columns"] = wr.fieldnames
-        self.write_state_file(self.state)
+            with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
+                wr.writeheader()
+                for json_file in files:
+                    json_file_path = os.path.join(temp_dir, json_file)
+                    with open(json_file_path, 'r') as file:
+                        content = json.load(file)
+                        for row in content:
+                            wr.writerow(self._ensure_proper_column_names(row))
 
-        # Clean temp folder (for local runs)
-        shutil.rmtree(temp_dir)
+            out_table = self.add_column_metadata(client, out_table)
+            self.write_manifest(out_table)
+
+            self.state.setdefault(resource_alias, {})["columns"] = wr.fieldnames
+            self.write_state_file(self.state)
+
+            # Clean temp folder (for local runs)
+            shutil.rmtree(temp_dir)
+        else:
+            logging.warning(f"No data were fetched for resource {resource_alias}.")
 
     @staticmethod
     def add_column_metadata(client: SAPClient, out_table: TableDefinition):
