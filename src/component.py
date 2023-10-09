@@ -81,15 +81,16 @@ class Component(ComponentBase):
         return out_table
 
     def _init_configuration(self, sync_action: bool = False) -> None:
-        self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
         if not sync_action:
             self._configuration = Configuration.load_from_dict(self.configuration.parameters)
+            self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
         else:
             self._configuration = SyncActionConfiguration.load_from_dict(self.configuration.parameters)
+            self.validate_configuration_parameters(SyncActionConfiguration.get_dataclass_required_parameters())
 
     @sync_action("listResources")
     def list_resources(self) -> list[SelectElement]:
-        self._init_configuration()
+        self._init_configuration(sync_action=True)
 
         server_url = self._configuration.authentication.server_url
         username = self._configuration.authentication.username
