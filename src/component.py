@@ -9,10 +9,11 @@ from keboola.component.base import ComponentBase, sync_action
 from keboola.csvwriter import ElasticDictWriter
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
+from keboola.component.dao import TableDefinition
 
 from sap_client.client import SAPClient, SapClientException
 from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
-from configuration import Configuration
+from configuration import Configuration, SyncActionConfiguration
 
 
 class Component(ComponentBase):
@@ -66,7 +67,7 @@ class Component(ComponentBase):
         shutil.rmtree(temp_dir)
 
     @staticmethod
-    def add_column_metadata(client, out_table):
+    def add_column_metadata(client: SAPClient, out_table: TableDefinition):
         for column in client.metadata:
             col_md = client.metadata.get(column)
             datatype = SAP_TO_SNOWFLAKE_MAP[col_md.get("TYPE")]
@@ -79,9 +80,12 @@ class Component(ComponentBase):
                                                           length=length)
         return out_table
 
-    def _init_configuration(self) -> None:
+    def _init_configuration(self, sync_action: bool = False) -> None:
         self.validate_configuration_parameters(Configuration.get_dataclass_required_parameters())
-        self._configuration: Configuration = Configuration.load_from_dict(self.configuration.parameters)
+        if not sync_action:
+            self._configuration = Configuration.load_from_dict(self.configuration.parameters)
+        else:
+            self._configuration = SyncActionConfiguration.load_from_dict(self.configuration.parameters)
 
     @sync_action("listResources")
     def list_resources(self) -> list[SelectElement]:

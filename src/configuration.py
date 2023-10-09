@@ -68,3 +68,8 @@ class Destination(ConfigurationBase):
 class Configuration(ConfigurationBase):
     authentication: Authentication
     source: Source
+
+
+@dataclass
+class SyncActionConfiguration(ConfigurationBase):
+    authentication: Authentication

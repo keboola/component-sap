@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 
+import httpx
 from keboola.http_client import AsyncHttpClient
 
 
@@ -145,7 +146,10 @@ class SAPClient(AsyncHttpClient):
         if params is None:
             params = {}
 
-        return await self.get(endpoint, params=params)
+        try:
+            return await self.get(endpoint, params=params)
+        except httpx.ConnectError as e:
+            raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
 
     @staticmethod
     def _join_url_parts(*parts):
