@@ -52,7 +52,6 @@ class Component(ComponentBase):
         files = os.listdir(temp_dir)
 
         if files:
-
             with ElasticDictWriter(out_table.full_path, statefile_columns) as wr:
                 wr.writeheader()
                 for json_file in files:
