@@ -32,6 +32,7 @@ class Component(ComponentBase):
         server_url = self._configuration.authentication.server_url
         resource_alias = self._configuration.source.resource_alias
         limit = self._configuration.source.limit
+        batch_size = self._configuration.source.batch_size
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
 
@@ -40,7 +41,7 @@ class Component(ComponentBase):
 
         statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
 
-        client = SAPClient(server_url, username, password, temp_dir, limit, verify=False)
+        client = SAPClient(server_url, username, password, temp_dir, limit, batch_size=batch_size, verify=False)
 
         out_table = self.create_out_table_definition(resource_alias)
 

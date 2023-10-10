@@ -12,7 +12,6 @@ class SapClientException(Exception):
     pass
 
 
-BATCH_SIZE = 2
 DEFAULT_LIMIT = 10_000
 
 
@@ -21,7 +20,7 @@ class SAPClient(AsyncHttpClient):
     METADATA_ENDPOINT = "$metadata"
 
     def __init__(self, server_url: str, username: str, password: str, destination: str,  limit: int = DEFAULT_LIMIT,
-                 verify: bool = True):
+                 batch_size: int = 2, verify: bool = True):
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
@@ -31,6 +30,7 @@ class SAPClient(AsyncHttpClient):
         self.destination = destination
         self.verify = verify
         self.limit = limit
+        self.batch_size = batch_size
         self.stop = False
         self.metadata = {}
 
@@ -77,7 +77,7 @@ class SAPClient(AsyncHttpClient):
         tasks = []
 
         while not self.stop:
-            for _ in range(BATCH_SIZE):
+            for _ in range(self.batch_size):
                 endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
                 tasks.append(self._get_and_process(endpoint, params.copy()))
 

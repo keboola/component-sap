@@ -56,6 +56,7 @@ class Authentication(ConfigurationBase):
 class Source(ConfigurationBase):
     resource_alias: str
     limit: int = 10_000
+    batch_size: int = 2
 
 
 @dataclass
