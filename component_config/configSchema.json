@@ -15,7 +15,7 @@
         "server_url": {
           "type": "string",
           "title": "Server URL",
-          "description": "For example: https://s41demo.actum.cz:45300/sap/bc/http/sap/YACTUM_DP",
+          "description": "For example: https://sapserver.provider.cz:45300/sap/bc/http/sap/YACTUM_DP",
           "propertyOrder": 1
         },
         "username": {
