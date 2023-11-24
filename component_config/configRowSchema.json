@@ -37,6 +37,22 @@
           "default": 2,
           "description": "The maximum number of requests to process at a time.",
           "propertyOrder": 3
+        },
+        "paging_method": {
+          "type": "string",
+          "title": "Paging method",
+          "default": "offset",
+          "items": {
+            "enum": [
+                "offset",
+                "key"
+            ],
+            "type": "string"
+        },
+        "format": "select",
+        "uniqueItems": true,
+          "description": "The maximum number of requests to process at a time.",
+          "propertyOrder": 4
         }
       }
     }

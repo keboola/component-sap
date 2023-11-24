@@ -49,7 +49,7 @@ class SAPClient(AsyncHttpClient):
 
         return sources
 
-    async def fetch(self, resource_alias):
+    async def fetch(self, resource_alias: str, paging_method: str = "offset"):
         sources = await self.list_sources()
         is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
         if is_source_present:
@@ -62,14 +62,22 @@ class SAPClient(AsyncHttpClient):
 
         if metadata.get("PAGING") is True:
             logging.info(f"Resource {resource_alias} supports paging.")
-            async for page in self._fetch_paging(resource_alias):
-                await self._store_results(page, resource_alias)
+
+            if paging_method == "offset":
+                async for page in self._fetch_paging_offset(resource_alias):
+                    await self._store_results(page, resource_alias)
+            elif paging_method == "key":
+                async for page in self._fetch_paging_key(resource_alias):
+                    await self._store_results(page, resource_alias)
+            else:
+                raise SapClientException(f"Unsupported paging method: {paging_method}")
+
         else:
             logging.info(f"Resource {resource_alias} does not support paging. "
                          f"The component will try to fetch the data in one request.")
             await self._fetch_full(resource_alias)
 
-    async def _fetch_paging(self, resource_alias: str, page: int = 0):
+    async def _fetch_paging_offset(self, resource_alias: str, page: int = 0):
         params = {
             "page": page if page else 1,
             "limit": self.limit
@@ -84,6 +92,34 @@ class SAPClient(AsyncHttpClient):
                 params["page"] += 1
 
             # Wait for all tasks to complete and iterate over results.
+            results = await asyncio.gather(*tasks)
+            for result in results:
+                yield result
+
+            tasks.clear()
+
+    async def _fetch_paging_key(self, resource_alias: str):
+        params = {
+            "limit": self.limit
+        }
+        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$key_blocks")
+
+        r = await self._get(endpoint, params=params)
+        blocks = r.get("DATA_SOURCE", {}).get("KEY_BLOCKS")
+        if not blocks:
+            raise SapClientException("Unable to obtain key blocks.")  # TODO: fallback to offset paging
+
+        tasks = []
+        for block in blocks:
+
+            for _ in range(self.batch_size):
+                params = {
+                    "key_min": block.get("KEY_MIN"),
+                    "key_max": block.get("KEY_MAX")
+                }
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+                tasks.append(self._get_and_process(endpoint, params.copy()))
+
             results = await asyncio.gather(*tasks)
             for result in results:
                 yield result

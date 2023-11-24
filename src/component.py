@@ -35,6 +35,7 @@ class Component(ComponentBase):
         batch_size = self._configuration.source.batch_size
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
+        paging_method = self._configuration.source.paging_method
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -46,7 +47,7 @@ class Component(ComponentBase):
         out_table = self.create_out_table_definition(resource_alias)
 
         try:
-            asyncio.run(client.fetch(resource_alias))
+            asyncio.run(client.fetch(resource_alias, paging_method))
         except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
