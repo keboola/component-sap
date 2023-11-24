@@ -18,8 +18,8 @@
             }
           },
           "items": {
-              "enum": [],
-              "type": "string"
+            "enum": [],
+            "type": "string"
           },
           "enum": [],
           "propertyOrder": 1
@@ -42,16 +42,17 @@
           "type": "string",
           "title": "Paging method",
           "default": "offset",
-          "items": {
-            "enum": [
-                "offset",
-                "key"
-            ],
-            "type": "string"
-        },
-        "format": "select",
-        "uniqueItems": true,
-          "description": "The maximum number of requests to process at a time.",
+          "enum": [
+            "offset",
+            "key"
+          ],
+          "options": {
+            "enum_titles": [
+              "Offset",
+              "Key"
+            ]
+          },
+          "uniqueItems": true,
           "propertyOrder": 4
         }
       }
