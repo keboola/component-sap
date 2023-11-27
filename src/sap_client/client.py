@@ -110,21 +110,26 @@ class SAPClient(AsyncHttpClient):
             raise SapClientException("Unable to obtain key blocks.")  # TODO: fallback to offset paging
 
         tasks = []
+
         for block in blocks:
+            params = {
+                "key_min": block.get("KEY_MIN"),
+                "key_max": block.get("KEY_MAX")
+            }
+            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+            tasks.append(self._get_and_process(endpoint, params.copy()))
 
-            for _ in range(self.batch_size):
-                params = {
-                    "key_min": block.get("KEY_MIN"),
-                    "key_max": block.get("KEY_MAX")
-                }
-                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-                tasks.append(self._get_and_process(endpoint, params.copy()))
+            if len(tasks) == self.batch_size:
+                results = await asyncio.gather(*tasks)
+                for result in results:
+                    yield result
+                tasks.clear()
 
+        # Process any remaining tasks
+        if tasks:
             results = await asyncio.gather(*tasks)
             for result in results:
                 yield result
-
-            tasks.clear()
 
     async def _fetch_full(self, resource_alias: str):
         endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
