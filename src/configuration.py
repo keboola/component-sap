@@ -55,10 +55,10 @@ class Authentication(ConfigurationBase):
 @dataclass
 class Source(ConfigurationBase):
     resource_alias: str
+    sync_mode: str
+    paging_method: str
     limit: int = 10_000
     batch_size: int = 2
-    paging_method: str = "offset"
-    sync_mode: str = "full_sync"
 
 
 @dataclass

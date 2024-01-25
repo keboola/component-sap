@@ -28,12 +28,12 @@
           "type": "integer",
           "title": "Limit",
           "default": 10000,
-          "description": "You can use this field to set the limit for paging.",
+          "description": "The limit for paging.",
           "propertyOrder": 2
         },
         "batch_size": {
           "type": "integer",
-          "title": "Batch size",
+          "title": "Maximum concurrent requests",
           "default": 2,
           "description": "The maximum number of requests to process at a time.",
           "propertyOrder": 3

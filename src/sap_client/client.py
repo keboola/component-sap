@@ -110,9 +110,14 @@ class SAPClient(AsyncHttpClient):
 
         while not self.stop:
             for _ in range(self.batch_size):
-                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-                tasks.append(self._get_and_process(endpoint, params.copy()))
 
+                if self.delta:
+                    endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
+                    params["delta_pointer"] = self.delta
+                else:
+                    endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+
+                tasks.append(self._get_and_process(endpoint, params.copy()))
                 params["page"] += 1
 
             # Wait for all tasks to complete and iterate over results.
@@ -162,22 +167,33 @@ class SAPClient(AsyncHttpClient):
                 yield result
 
     async def _fetch_full(self, resource_alias: str):
-        params = {}
-        if self.delta:
-            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
-            params = {"delta_pointer": self.delta}
-        else:
-            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+        endpoint = self._get_data_sources_endpoint(resource_alias)
+        params = self._get_request_params({})
 
-        r = await self._get(endpoint, params=params)
-        entities = r.get("DATA_SOURCE", {}).get("ENTITIES", [])
+        response = await self._get(endpoint, params=params)
+        entities = response.get("DATA_SOURCE", {}).get("ENTITIES", [])
+
         if entities:
             columns_specification = entities[0].get("COLUMNS")
             columns = self._get_columns(columns_specification)
-            rows = entities[0].get("ROWS")  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+
+            rows = entities[0].get("ROWS")
             if rows:
                 return self._process_result(rows, columns)
+
         return []
+
+    def _get_data_sources_endpoint(self, resource_alias: str):
+        if self.delta:
+            return self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
+        else:
+            return self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+
+    def _get_request_params(self, params: dict) -> dict:
+        if self.delta:
+            params["delta_pointer"] = self.delta
+
+        return params
 
     async def _store_results(self, results: list[dict], name: str) -> None:
         if not self.destination:
