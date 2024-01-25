@@ -58,7 +58,7 @@ class Source(ConfigurationBase):
     limit: int = 10_000
     batch_size: int = 2
     paging_method: str = "offset"
-    delta: bool = False
+    sync_mode: str = "full_sync"
 
 
 @dataclass

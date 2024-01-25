@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from typing import Union
 import os
 import shutil
 
@@ -36,14 +37,14 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
         paging_method = self._configuration.source.paging_method
-        delta = self._configuration.source.delta
+        sync_mode = self._configuration.source.sync_mode
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
 
         statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
 
-        previous_delta_max = self._init_delta(delta, resource_alias)
+        previous_delta_max = self._init_delta(sync_mode, resource_alias)
 
         client = SAPClient(server_url=server_url,
                            username=username,
@@ -90,10 +91,11 @@ class Component(ComponentBase):
 
         self.write_state_file(self.state)
 
-    def _init_delta(self, delta: bool, resource_alias: str) -> int:
+    def _init_delta(self, sync_mode: str, resource_alias: str) -> Union[bool, int, str]:
+        """This method initializes delta sync by setting delta pointer to the last value from state file."""
         previous_delta_max = None
-        if delta:
-            previous_delta_max = self.state.get(resource_alias, {}).get("delta_max", None)
+        if sync_mode == "incremental_sync":
+            previous_delta_max = self.state.get(resource_alias, {}).get("delta_max")
 
             if not previous_delta_max:
                 logging.warning("Delta sync is enabled, but no previous delta pointer was found in state file. "

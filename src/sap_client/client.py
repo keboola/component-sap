@@ -239,9 +239,9 @@ class SAPClient(AsyncHttpClient):
             raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
 
     @staticmethod
-    def _join_url_parts(*parts):
+    def _join_url_parts(*parts) -> str:
         return "/".join(str(part).strip("/") for part in parts)
 
     @property
-    def max_delta_pointer(self):
+    def max_delta_pointer(self) -> Union[int, str, None]:
         return max(self.delta_values, default=None)

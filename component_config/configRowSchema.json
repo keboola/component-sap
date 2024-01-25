@@ -38,6 +38,23 @@
           "description": "The maximum number of requests to process at a time.",
           "propertyOrder": 3
         },
+        "sync_type": {
+          "type": "string",
+          "title": "Sync method",
+          "default": "full_sync",
+          "enum": [
+            "full_sync",
+            "incremental_sync"
+          ],
+          "options": {
+            "enum_titles": [
+              "Full sync",
+              "Incremental sync"
+            ]
+          },
+          "uniqueItems": true,
+          "propertyOrder": 4
+        },
         "paging_method": {
           "type": "string",
           "title": "Paging method",
@@ -53,7 +70,7 @@
             ]
           },
           "uniqueItems": true,
-          "propertyOrder": 4
+          "propertyOrder": 5
         }
       }
     }
