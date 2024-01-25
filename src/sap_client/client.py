@@ -110,12 +110,8 @@ class SAPClient(AsyncHttpClient):
 
         while not self.stop:
             for _ in range(self.batch_size):
-
-                if self.delta:
-                    endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
-                    params["delta_pointer"] = self.delta
-                else:
-                    endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+                endpoint = self._get_data_sources_endpoint(resource_alias)
+                params = self._get_request_params(params)
 
                 tasks.append(self._get_and_process(endpoint, params.copy()))
                 params["page"] += 1
@@ -146,11 +142,8 @@ class SAPClient(AsyncHttpClient):
                 "key_min": block.get("KEY_MIN"),
                 "key_max": block.get("KEY_MAX")
             }
-            if self.delta:
-                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
-                params["delta_pointer"] = self.delta
-            else:
-                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+            endpoint = self._get_data_sources_endpoint(resource_alias)
+            params = self._get_request_params(params)
 
             tasks.append(self._get_and_process(endpoint, params.copy()))
 
