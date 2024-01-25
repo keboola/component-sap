@@ -1,11 +1,14 @@
 import asyncio
 import json
 import logging
+from typing import Union
 import os
 import uuid
-
 import httpx
+
 from keboola.http_client import AsyncHttpClient
+
+from .data_source_model import DataSource
 
 
 class SapClientException(Exception):
@@ -13,6 +16,7 @@ class SapClientException(Exception):
 
 
 DEFAULT_LIMIT = 10_000
+DEFAULT_BATCH_SIZE = 2
 
 
 class SAPClient(AsyncHttpClient):
@@ -20,7 +24,18 @@ class SAPClient(AsyncHttpClient):
     METADATA_ENDPOINT = "$metadata"
 
     def __init__(self, server_url: str, username: str, password: str, destination: str,  limit: int = DEFAULT_LIMIT,
-                 batch_size: int = 2, verify: bool = True):
+                 delta: Union[bool, int] = False, batch_size: int = DEFAULT_BATCH_SIZE, verify: bool = True):
+        """Implements SAP client for fetching data from SAP Data Sources.
+        Args:
+            server_url: SAP server url.
+            username: Username for authentication.
+            password: Password for authentication.
+            destination: Destination folder for storing fetched data.
+            limit: Limit for one request.
+            delta: Delta pointer.
+            batch_size: Number of parallel requests.
+            verify: Verify SSL certificate.
+        """
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
@@ -28,15 +43,20 @@ class SAPClient(AsyncHttpClient):
                          retry_status_codes=[503, 500], verify_ssl=verify)
 
         self.destination = destination
-        self.verify = verify
         self.limit = limit
+        self.delta = delta
+        self.delta_values = []
+        self.verify = verify
         self.batch_size = batch_size
         self.stop = False
         self.metadata = {}
 
+        if self.delta:
+            logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
+
     async def list_sources(self):
         r = await self._get(self.DATA_SOURCES_ENDPOINT)
-        sources = r.get("DATA_SOURCES", None)
+        sources = r.get("DATA_SOURCES", [])
 
         if sources:
             sources = [
@@ -57,10 +77,14 @@ class SAPClient(AsyncHttpClient):
         else:
             raise SapClientException(f"{resource_alias} resource is not available.")
 
-        metadata = await self._get_resource_metadata(resource_alias)
-        self.metadata = self.parse_metadata(metadata)
+        resource_info = await self._get_resource_metadata(resource_alias)
+        data_source = DataSource.from_dict(resource_info)
+        self.metadata = data_source.metadata
 
-        if metadata.get("PAGING") is True:
+        if self.delta and not data_source.DELTA:
+            raise SapClientException(f"Resource {resource_alias} does not support incremental sync.")
+
+        if data_source.PAGING:
             logging.info(f"Resource {resource_alias} supports paging.")
 
             if paging_method == "offset":
@@ -102,8 +126,9 @@ class SAPClient(AsyncHttpClient):
         params = {
             "limit": self.limit
         }
-        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$key_blocks")
 
+        # get blocks
+        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$key_blocks")
         r = await self._get(endpoint, params=params)
         blocks = r.get("DATA_SOURCE", {}).get("KEY_BLOCKS")
         if not blocks:
@@ -116,7 +141,12 @@ class SAPClient(AsyncHttpClient):
                 "key_min": block.get("KEY_MIN"),
                 "key_max": block.get("KEY_MAX")
             }
-            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+            if self.delta:
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
+                params["delta_pointer"] = self.delta
+            else:
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+
             tasks.append(self._get_and_process(endpoint, params.copy()))
 
             if len(tasks) == self.batch_size:
@@ -132,9 +162,15 @@ class SAPClient(AsyncHttpClient):
                 yield result
 
     async def _fetch_full(self, resource_alias: str):
-        endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
-        r = await self._get(endpoint)
-        entities = r.get("DATA_SOURCE", None).get("ENTITIES", [])
+        params = {}
+        if self.delta:
+            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$delta")
+            params = {"delta_pointer": self.delta}
+        else:
+            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
+
+        r = await self._get(endpoint, params=params)
+        entities = r.get("DATA_SOURCE", {}).get("ENTITIES", [])
         if entities:
             columns_specification = entities[0].get("COLUMNS")
             columns = self._get_columns(columns_specification)
@@ -160,9 +196,19 @@ class SAPClient(AsyncHttpClient):
         entities = data_source.get("ENTITIES", [])
 
         if entities:
-            columns_specification = entities[0].get("COLUMNS")
+            entity = entities[0]   # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            columns_specification = entity.get("COLUMNS")
+
+            if delta_pointer := entity.get("DELTA_POINTER"):
+                try:
+                    delta_pointer = int(delta_pointer)
+                except ValueError:
+                    raise SapClientException(f"Only integer {delta_pointer} values are supported. "
+                                             f"Delta pointer received: {delta_pointer}")
+                self.delta_values.append(delta_pointer)
+
             columns = self._get_columns(columns_specification)
-            rows = entities[0].get("ROWS")  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            rows = entity.get("ROWS")
             if rows:
                 return self._process_result(rows, columns)
             else:
@@ -170,10 +216,10 @@ class SAPClient(AsyncHttpClient):
 
         return None
 
-    async def _get_resource_metadata(self, resource):
+    async def _get_resource_metadata(self, resource) -> dict:
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
         r = await self._get(endpoint)
-        return r.get("DATA_SOURCE", None)
+        return r.get("DATA_SOURCE")
 
     @staticmethod
     def _process_result(rows: list[dict], columns: list):
@@ -196,11 +242,6 @@ class SAPClient(AsyncHttpClient):
     def _join_url_parts(*parts):
         return "/".join(str(part).strip("/") for part in parts)
 
-    @staticmethod
-    def get_ordered_columns(columns_specification: list):
-        sorted_columns = sorted(columns_specification, key=lambda x: x['POSITION'])
-        return {col['COLUMN_ALIAS']: col for col in sorted_columns}
-
-    def parse_metadata(self, metadata: dict):
-        entity = metadata['ENTITIES'][0]
-        return self.get_ordered_columns(entity['COLUMNS'])
+    @property
+    def max_delta_pointer(self):
+        return max(self.delta_values, default=None)
