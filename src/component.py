@@ -37,7 +37,7 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
         paging_method = self._configuration.source.paging_method
-        sync_mode = self._configuration.source.sync_mode
+        sync_type = self._configuration.source.sync_type
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
 
@@ -46,7 +46,7 @@ class Component(ComponentBase):
 
         statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
 
-        previous_delta_max = self._init_delta(sync_mode, resource_alias)
+        previous_delta_max = self._init_delta(sync_type, resource_alias)
 
         client = SAPClient(server_url=server_url,
                            username=username,

@@ -55,7 +55,7 @@ class Authentication(ConfigurationBase):
 @dataclass
 class Source(ConfigurationBase):
     resource_alias: str
-    sync_mode: str
+    sync_type: str
     paging_method: str
     limit: int = 10_000
     batch_size: int = 2
