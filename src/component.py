@@ -105,6 +105,7 @@ class Component(ComponentBase):
     @staticmethod
     def add_column_metadata(client: SAPClient, out_table: TableDefinition):
         # TODO: How does adding metadata act when not all columns have metadata set?
+        pks = []
         for column in client.metadata:
             col_md = client.metadata.get(column)
             datatype = SAP_TO_SNOWFLAKE_MAP[col_md.get("TYPE")]
@@ -115,6 +116,14 @@ class Component(ComponentBase):
             out_table.table_metadata.add_column_data_type(column=column,
                                                           data_type=datatype,
                                                           length=length)
+
+            if col_md.get("KEY"):
+                pks.append(column)
+
+        if pks:
+            out_table.primary_key = pks
+            logging.info(f"Primary key set to {pks}.")
+
         return out_table
 
     def _init_configuration(self, sync_act: bool = False) -> None:
@@ -126,13 +135,13 @@ class Component(ComponentBase):
             self.validate_configuration_parameters(SyncActionConfiguration.get_dataclass_required_parameters())
 
     @staticmethod
-    def _ensure_proper_column_names(original_dict):
+    def _ensure_proper_column_names(original_dict: dict):
         """
         Transforms dictionary keys by removing a leading '/' character and replacing
         other '/' characters with '_'.
 
         Parameters:
-        - original_dict (dict): The original dictionary with keys to transform.
+        - original_dict: The original dictionary with keys to transform.
 
         Returns:
         dict: A new dictionary with transformed keys.
