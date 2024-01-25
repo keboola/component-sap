@@ -53,6 +53,7 @@
             ]
           },
           "uniqueItems": true,
+          "description": "Full sync will fetch all data from the source table. Incremental sync will fetch only data that has changed since the last run.",
           "propertyOrder": 4
         },
         "paging_method": {
@@ -70,6 +71,7 @@
             ]
           },
           "uniqueItems": true,
+          "description": "DataSource pagination method",
           "propertyOrder": 5
         }
       }
