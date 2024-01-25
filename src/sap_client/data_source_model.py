@@ -46,4 +46,3 @@ class DataSource:
     def metadata(self):
         entity: Entity = self.ENTITIES[0]
         return self._get_ordered_columns(entity)
-
