@@ -57,13 +57,8 @@ class Component(ComponentBase):
                            delta=previous_delta_max,
                            verify=False)
 
-        if not output_table_name:
-            output_table_name = resource_alias
-
-        if load_type == "full_load":
-            incremental = False
-        else:
-            incremental = True
+        output_table_name = output_table_name or resource_alias
+        incremental = load_type != "full_load"
 
         out_table = self.create_out_table_definition(name=output_table_name, incremental=incremental)
 
