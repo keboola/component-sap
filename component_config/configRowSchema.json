@@ -7,13 +7,9 @@
       "title": "Source settings",
       "propertyOrder": 1,
       "properties": {
-        "required": [
-          "resource_alias",
-          "sync_type",
-          "paging_method"
-        ],
         "resource_alias": {
           "type": "string",
+          "required": true,
           "title": "List Resources",
           "description": "Use this to list tables available to fetch.",
           "options": {
@@ -45,6 +41,7 @@
         },
         "sync_type": {
           "type": "string",
+          "required": true,
           "title": "Sync method",
           "default": "full_sync",
           "enum": [
@@ -63,6 +60,7 @@
         },
         "paging_method": {
           "type": "string",
+          "required": true,
           "title": "Paging method",
           "default": "offset",
           "enum": [
