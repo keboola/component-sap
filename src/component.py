@@ -36,18 +36,30 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
         paging_method = self._configuration.source.paging_method
+        delta = self._configuration.source.delta
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
 
         statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
 
-        client = SAPClient(server_url, username, password, temp_dir, limit, batch_size=batch_size, verify=False)
+        previous_delta_max = self._init_delta(delta, resource_alias)
+
+        client = SAPClient(server_url=server_url,
+                           username=username,
+                           password=password,
+                           destination=temp_dir,
+                           limit=limit,
+                           batch_size=batch_size,
+                           delta=previous_delta_max,
+                           verify=False)
 
         out_table = self.create_out_table_definition(resource_alias)
 
         try:
-            asyncio.run(client.fetch(resource_alias, paging_method))
+            asyncio.run(
+                client.fetch(resource_alias, paging_method)
+            )
         except SapClientException as e:
             raise UserException(f"An error occurred while fetching resource: {e}")
 
@@ -67,16 +79,33 @@ class Component(ComponentBase):
             self.write_manifest(out_table)
 
             self.state.setdefault(resource_alias, {})["columns"] = wr.fieldnames
-            self.write_state_file(self.state)
 
             # Clean temp folder (for local runs)
             shutil.rmtree(temp_dir)
         else:
             logging.warning(f"No data were fetched for resource {resource_alias}.")
 
+        self.state[resource_alias]["delta_max"] = client.max_delta_pointer
+        logging.info(f"Delta pointer for resource {resource_alias} was set to {client.max_delta_pointer}.")
+
+        self.write_state_file(self.state)
+
+    def _init_delta(self, delta: bool, resource_alias: str) -> int:
+        previous_delta_max = None
+        if delta:
+            previous_delta_max = self.state.get(resource_alias, {}).get("delta_max", None)
+
+            if not previous_delta_max:
+                logging.warning("Delta sync is enabled, but no previous delta pointer was found in state file. "
+                                "Full sync will be performed.")
+                previous_delta_max = False
+
+        return previous_delta_max
+
     @staticmethod
     def add_column_metadata(client: SAPClient, out_table: TableDefinition):
         # TODO: How does adding metadata act when not all columns have metadata set?
+        pks = []
         for column in client.metadata:
             col_md = client.metadata.get(column)
             datatype = SAP_TO_SNOWFLAKE_MAP[col_md.get("TYPE")]
@@ -87,6 +116,14 @@ class Component(ComponentBase):
             out_table.table_metadata.add_column_data_type(column=column,
                                                           data_type=datatype,
                                                           length=length)
+
+            if col_md.get("KEY"):
+                pks.append(column)
+
+        if pks:
+            out_table.primary_key = pks
+            logging.info(f"Primary key set to {pks}.")
+
         return out_table
 
     def _init_configuration(self, sync_act: bool = False) -> None:
@@ -98,13 +135,13 @@ class Component(ComponentBase):
             self.validate_configuration_parameters(SyncActionConfiguration.get_dataclass_required_parameters())
 
     @staticmethod
-    def _ensure_proper_column_names(original_dict):
+    def _ensure_proper_column_names(original_dict: dict):
         """
         Transforms dictionary keys by removing a leading '/' character and replacing
         other '/' characters with '_'.
 
         Parameters:
-        - original_dict (dict): The original dictionary with keys to transform.
+        - original_dict: The original dictionary with keys to transform.
 
         Returns:
         dict: A new dictionary with transformed keys.
