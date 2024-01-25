@@ -63,14 +63,15 @@ class Source(ConfigurationBase):
 
 @dataclass
 class Destination(ConfigurationBase):
-    custom_tag: str = ""
-    permanent_files: bool = False
+    output_table_name: str = ""
+    load_type: str = "full_load"
 
 
 @dataclass
 class Configuration(ConfigurationBase):
     authentication: Authentication
     source: Source
+    destination: Destination
 
 
 @dataclass

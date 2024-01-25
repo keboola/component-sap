@@ -38,6 +38,8 @@ class Component(ComponentBase):
         password = self._configuration.authentication.pswd_password
         paging_method = self._configuration.source.paging_method
         sync_mode = self._configuration.source.sync_mode
+        output_table_name = self._configuration.destination.output_table_name
+        load_type = self._configuration.destination.load_type
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -55,7 +57,15 @@ class Component(ComponentBase):
                            delta=previous_delta_max,
                            verify=False)
 
-        out_table = self.create_out_table_definition(resource_alias)
+        if not output_table_name:
+            output_table_name = resource_alias
+
+        if load_type == "full_load":
+            incremental = False
+        else:
+            incremental = True
+
+        out_table = self.create_out_table_definition(name=output_table_name, incremental=incremental)
 
         try:
             asyncio.run(

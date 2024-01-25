@@ -73,6 +73,41 @@
           "propertyOrder": 5
         }
       }
+    },
+    "destination": {
+      "title": "Destination",
+      "type": "object",
+      "propertyOrder": 2,
+      "required": [
+        "output_table_name",
+        "load_type"
+      ],
+      "properties": {
+        "output_table_name": {
+          "type": "string",
+          "title": "Storage Table Name (Optional)",
+          "description": "Name of the table stored in Storage. Defaults to resource name.",
+          "propertyOrder": 10
+        },
+        "load_type": {
+          "type": "string",
+          "enum": [
+            "full_load",
+            "incremental_load"
+          ],
+          "options": {
+            "enum_titles": [
+              "Full Load",
+              "Incremental Load"
+            ]
+          },
+          "default": "full_load",
+          "format": "checkbox",
+          "title": "Load Type",
+          "description": "If Full load is used, the destination table will be overwritten every run. If incremental load is used, data will be upserted into the destination table. Tables with a primary key will have rows updated, tables without a primary key will have rows appended.",
+          "propertyOrder": 20
+        }
+      }
     }
   }
 }
