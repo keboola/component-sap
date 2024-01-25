@@ -7,6 +7,11 @@
       "title": "Source settings",
       "propertyOrder": 1,
       "properties": {
+        "required": [
+          "resource_alias",
+          "sync_type",
+          "paging_method"
+        ],
         "resource_alias": {
           "type": "string",
           "title": "List Resources",
