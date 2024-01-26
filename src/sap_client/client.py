@@ -86,7 +86,8 @@ class SAPClient(AsyncHttpClient):
             raise SapClientException(f"Resource {resource_alias} does not support delta function.")
 
         if self.delta:
-            await self._fetch_full(resource_alias)
+            page = await self._fetch_full(resource_alias)
+            await self._store_results(page, resource_alias)
 
         elif data_source.PAGING:
             logging.info(f"Resource {resource_alias} supports paging.")
@@ -101,7 +102,8 @@ class SAPClient(AsyncHttpClient):
                 raise SapClientException(f"Unsupported paging method: {paging_method}")
 
         else:
-            await self._fetch_full(resource_alias)
+            page = await self._fetch_full(resource_alias)
+            await self._store_results(page, resource_alias)
             logging.info(f"Resource {resource_alias} does not support paging. "
                          f"The component will try to fetch the data in one request.")
 
@@ -170,10 +172,14 @@ class SAPClient(AsyncHttpClient):
         entities = response.get("DATA_SOURCE", {}).get("ENTITIES", [])
 
         if entities:
-            columns_specification = entities[0].get("COLUMNS")
+            entity = entities[0]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+
+            columns_specification = entity.get("COLUMNS")
             columns = self._get_columns(columns_specification)
 
-            rows = entities[0].get("ROWS")
+            self._set_delta_pointer(entity)
+
+            rows = entity.get("ROWS")
             if rows:
                 return self._process_result(rows, columns)
 
@@ -211,16 +217,7 @@ class SAPClient(AsyncHttpClient):
             entity = entities[0]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
             columns_specification = entity.get("COLUMNS")
 
-            if delta_pointer := entity.get("DELTA_POINTER"):
-                try:
-                    delta_pointer = int(delta_pointer)
-                except ValueError:
-                    try:
-                        delta_pointer = float(delta_pointer)
-                    except ValueError:
-                        raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
-                                                 f"Delta pointer received: {delta_pointer}")
-                self.delta_values.append(delta_pointer)
+            self._set_delta_pointer(entity)
 
             columns = self._get_columns(columns_specification)
             rows = entity.get("ROWS")
@@ -230,6 +227,18 @@ class SAPClient(AsyncHttpClient):
                 self.stop = True
 
         return None
+
+    def _set_delta_pointer(self, entity: dict) -> None:
+        if delta_pointer := entity.get("DELTA_POINTER"):
+            try:
+                delta_pointer = int(delta_pointer)
+            except ValueError:
+                try:
+                    delta_pointer = float(delta_pointer)
+                except ValueError:
+                    raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
+                                             f"Delta pointer received: {delta_pointer}")
+            self.delta_values.append(delta_pointer)
 
     async def _get_resource_metadata(self, resource) -> dict:
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
