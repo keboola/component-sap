@@ -23,7 +23,7 @@ class SAPClient(AsyncHttpClient):
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
-    def __init__(self, server_url: str, username: str, password: str, destination: str,  limit: int = DEFAULT_LIMIT,
+    def __init__(self, server_url: str, username: str, password: str, destination: str, limit: int = DEFAULT_LIMIT,
                  delta: Union[bool, int] = False, batch_size: int = DEFAULT_BATCH_SIZE, verify: bool = True):
         """Implements SAP client for fetching data from SAP Data Sources.
         Args:
@@ -53,6 +53,7 @@ class SAPClient(AsyncHttpClient):
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
+            self.delta_values.append(self.delta)
 
     async def list_sources(self):
         r = await self._get(self.DATA_SOURCES_ENDPOINT)
@@ -82,9 +83,12 @@ class SAPClient(AsyncHttpClient):
         self.metadata = data_source.metadata
 
         if self.delta and not data_source.DELTA:
-            raise SapClientException(f"Resource {resource_alias} does not support incremental sync.")
+            raise SapClientException(f"Resource {resource_alias} does not support delta function.")
 
-        if data_source.PAGING:
+        if self.delta:
+            await self._fetch_full(resource_alias)
+
+        elif data_source.PAGING:
             logging.info(f"Resource {resource_alias} supports paging.")
 
             if paging_method == "offset":
@@ -97,9 +101,9 @@ class SAPClient(AsyncHttpClient):
                 raise SapClientException(f"Unsupported paging method: {paging_method}")
 
         else:
+            await self._fetch_full(resource_alias)
             logging.info(f"Resource {resource_alias} does not support paging. "
                          f"The component will try to fetch the data in one request.")
-            await self._fetch_full(resource_alias)
 
     async def _fetch_paging_offset(self, resource_alias: str, page: int = 0):
         params = {
@@ -110,9 +114,7 @@ class SAPClient(AsyncHttpClient):
 
         while not self.stop:
             for _ in range(self.batch_size):
-                endpoint = self._get_data_sources_endpoint(resource_alias)
-                params = self._get_request_params(params)
-
+                endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
                 tasks.append(self._get_and_process(endpoint, params.copy()))
                 params["page"] += 1
 
@@ -142,9 +144,7 @@ class SAPClient(AsyncHttpClient):
                 "key_min": block.get("KEY_MIN"),
                 "key_max": block.get("KEY_MAX")
             }
-            endpoint = self._get_data_sources_endpoint(resource_alias)
-            params = self._get_request_params(params)
-
+            endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
             tasks.append(self._get_and_process(endpoint, params.copy()))
 
             if len(tasks) == self.batch_size:
@@ -160,6 +160,9 @@ class SAPClient(AsyncHttpClient):
                 yield result
 
     async def _fetch_full(self, resource_alias: str):
+        """Fetches all data from resource_alias. Also takes into account delta pointer if set. In such case only fetches
+        data that were changed since last fetch."""
+
         endpoint = self._get_data_sources_endpoint(resource_alias)
         params = self._get_request_params({})
 
@@ -190,7 +193,7 @@ class SAPClient(AsyncHttpClient):
 
     async def _store_results(self, results: list[dict], name: str) -> None:
         if not self.destination:
-            logging.info("Destination not set, results will not be stored.")
+            logging.warning("Destination not set, results will not be stored.")
             return
 
         if results:
@@ -205,15 +208,18 @@ class SAPClient(AsyncHttpClient):
         entities = data_source.get("ENTITIES", [])
 
         if entities:
-            entity = entities[0]   # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
+            entity = entities[0]  # ONLY ONE ENTITY FOR ONE DATA SOURCE IS SUPPORTED
             columns_specification = entity.get("COLUMNS")
 
             if delta_pointer := entity.get("DELTA_POINTER"):
                 try:
                     delta_pointer = int(delta_pointer)
                 except ValueError:
-                    raise SapClientException(f"Only integer {delta_pointer} values are supported. "
-                                             f"Delta pointer received: {delta_pointer}")
+                    try:
+                        delta_pointer = float(delta_pointer)
+                    except ValueError:
+                        raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
+                                                 f"Delta pointer received: {delta_pointer}")
                 self.delta_values.append(delta_pointer)
 
             columns = self._get_columns(columns_specification)

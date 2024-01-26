@@ -91,8 +91,10 @@ class Component(ComponentBase):
         else:
             logging.warning(f"No data were fetched for resource {resource_alias}.")
 
-        self.state[resource_alias]["delta_max"] = client.max_delta_pointer
-        logging.info(f"Delta pointer for resource {resource_alias} was set to {client.max_delta_pointer}.")
+        max_delta_pointer = client.max_delta_pointer
+        if max_delta_pointer:
+            self.state[resource_alias]["delta_max"] = max_delta_pointer
+            logging.info(f"Delta pointer for resource {resource_alias} was set to {max_delta_pointer}.")
 
         self.write_state_file(self.state)
 
@@ -100,12 +102,11 @@ class Component(ComponentBase):
         """This method initializes delta sync by setting delta pointer to the last value from state file."""
         previous_delta_max = None
         if sync_mode == "incremental_sync":
-            previous_delta_max = self.state.get(resource_alias, {}).get("delta_max")
+            previous_delta_max = self.state.get(resource_alias, {}).get("delta_max", False)
 
             if not previous_delta_max:
                 logging.warning("Delta sync is enabled, but no previous delta pointer was found in state file. "
                                 "Full sync will be performed.")
-                previous_delta_max = False
 
         return previous_delta_max
 
