@@ -71,41 +71,49 @@ class SAPClient(AsyncHttpClient):
         return sources
 
     async def fetch(self, resource_alias: str, paging_method: str = "offset"):
-        sources = await self.list_sources()
-        is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
-        if is_source_present:
-            logging.info(f"{resource_alias} resource will be fetched.")
-        else:
-            raise SapClientException(f"{resource_alias} resource is not available.")
+        await self.validate_source(resource_alias)
 
         resource_info = await self._get_resource_metadata(resource_alias)
         data_source = DataSource.from_dict(resource_info)
         self.metadata = data_source.metadata
 
+        await self.check_delta_support(resource_alias, data_source)
+
+        if self.delta:
+            await self.fetch_and_store_full(resource_alias)
+        elif data_source.PAGING:
+            await self.fetch_with_paging(resource_alias, paging_method)
+        else:
+            await self.fetch_and_store_full(resource_alias)
+            logging.info(f"Resource {resource_alias} does not support paging. "
+                         f"The component will try to fetch the data in one request.")
+
+    async def validate_source(self, resource_alias: str):
+        sources = await self.list_sources()
+        is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
+        if not is_source_present:
+            raise SapClientException(f"{resource_alias} resource is not available.")
+        logging.info(f"{resource_alias} resource will be fetched.")
+
+    async def check_delta_support(self, resource_alias: str, data_source: DataSource):
         if self.delta and not data_source.DELTA:
             raise SapClientException(f"Resource {resource_alias} does not support delta function.")
 
-        if self.delta:
-            page = await self._fetch_full(resource_alias)
-            await self._store_results(page, resource_alias)
+    async def fetch_and_store_full(self, resource_alias: str):
+        page = await self._fetch_full(resource_alias)
+        await self._store_results(page, resource_alias)
 
-        elif data_source.PAGING:
-            logging.info(f"Resource {resource_alias} supports paging.")
+    async def fetch_with_paging(self, resource_alias: str, paging_method: str):
+        logging.info(f"Resource {resource_alias} supports paging.")
 
-            if paging_method == "offset":
-                async for page in self._fetch_paging_offset(resource_alias):
-                    await self._store_results(page, resource_alias)
-            elif paging_method == "key":
-                async for page in self._fetch_paging_key(resource_alias):
-                    await self._store_results(page, resource_alias)
-            else:
-                raise SapClientException(f"Unsupported paging method: {paging_method}")
-
+        if paging_method == "offset":
+            async for page in self._fetch_paging_offset(resource_alias):
+                await self._store_results(page, resource_alias)
+        elif paging_method == "key":
+            async for page in self._fetch_paging_key(resource_alias):
+                await self._store_results(page, resource_alias)
         else:
-            page = await self._fetch_full(resource_alias)
-            await self._store_results(page, resource_alias)
-            logging.info(f"Resource {resource_alias} does not support paging. "
-                         f"The component will try to fetch the data in one request.")
+            raise SapClientException(f"Unsupported paging method: {paging_method}")
 
     async def _fetch_paging_offset(self, resource_alias: str, page: int = 0):
         params = {
