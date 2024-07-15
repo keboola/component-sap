@@ -52,8 +52,6 @@ class SAPClient(AsyncHttpClient):
         self.stop = False
         self.metadata = {}
 
-        self.test_connection()
-
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
             self.delta_values.append(self.delta)
@@ -80,6 +78,7 @@ class SAPClient(AsyncHttpClient):
         return sources
 
     async def fetch(self, resource_alias: str, paging_method: str = "offset"):
+        await self.test_connection()
         await self.validate_source(resource_alias)
 
         resource_info = await self._get_resource_metadata(resource_alias)
