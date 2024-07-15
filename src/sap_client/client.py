@@ -6,6 +6,9 @@ import os
 import uuid
 import httpx
 
+import requests
+from requests.auth import HTTPBasicAuth
+
 from keboola.http_client import AsyncHttpClient
 
 from .data_source_model import DataSource
@@ -51,9 +54,28 @@ class SAPClient(AsyncHttpClient):
         self.stop = False
         self.metadata = {}
 
+        self.test_connection(server_url, username, password)
+
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
             self.delta_values.append(self.delta)
+
+    @staticmethod
+    def test_connection(hostname, username, password):
+        auth = HTTPBasicAuth(username, password)
+        default_headers = {'Accept-Encoding': 'gzip, deflate'}
+
+        try:
+            response = requests.head(hostname, auth=auth, headers=default_headers, verify=True)
+            if response.status_code == 200:
+                print("Connection successful.")
+                print("Response Headers:")
+                for key, value in response.headers.items():
+                    print(f"{key}: {value}")
+            else:
+                print(f"Connection failed with status code {response.status_code}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
     async def list_sources(self):
         r = await self._get(self.DATA_SOURCES_ENDPOINT)
