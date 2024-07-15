@@ -6,9 +6,6 @@ import os
 import uuid
 import httpx
 
-import requests
-from requests.auth import HTTPBasicAuth
-
 from keboola.http_client import AsyncHttpClient
 from keboola.component.exceptions import UserException
 
