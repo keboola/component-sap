@@ -6,3 +6,4 @@ mock
 freezegun
 dataconf
 aiolimiter # not included yet in async client
+certifi==2024.7.4
