@@ -53,10 +53,10 @@ class SAPClient(AsyncHttpClient):
             verify: Verify SSL certificate.
         """
         auth = (username, password)
-        default_headers = {'Accept-Encoding': 'gzip, deflate', "Host": "sapdev01.fastsro.cz"}
+        default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500, 404], verify_ssl=verify)
+                         retry_status_codes=[503, 500], verify_ssl=verify)
 
         self.destination = destination
         self.limit = limit
