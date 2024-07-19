@@ -53,7 +53,7 @@ class SAPClient(AsyncHttpClient):
             verify: Verify SSL certificate.
         """
         auth = (username, password)
-        default_headers = {'Accept-Encoding': 'gzip, deflate'}
+        default_headers = {'Accept-Encoding': 'gzip, deflate', "Host": "sapdev01.fastsro.cz"}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=2,
                          retry_status_codes=[503, 500], verify_ssl=verify)
@@ -75,8 +75,8 @@ class SAPClient(AsyncHttpClient):
     async def list_sources(self):
         try:
             r = await self._get(self.DATA_SOURCES_ENDPOINT)
-        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-            raise SapClientException("Unable to list sources: {e}") from e
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise SapClientException(f"Unable to list sources. Check the connection to the server.")
 
         sources = r.get("DATA_SOURCES", [])
 
