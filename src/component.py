@@ -180,6 +180,8 @@ class Component(ComponentBase):
             detailed_error = traceback.format_exc()
             raise UserException(f"An error occurred while fetching list of resources: {e}\nDetails:\n{detailed_error}")
 
+        raise UserException("Test")
+
         return [
             SelectElement(
                 label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}",
