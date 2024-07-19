@@ -28,6 +28,9 @@ class Component(ComponentBase):
         """
         Main execution code
         """
+        logging.info(self.list_resources())
+        exit()
+
         self._init_configuration()
         self.state = self.get_state_file()
 
