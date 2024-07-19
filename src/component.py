@@ -169,7 +169,11 @@ class Component(ComponentBase):
         password = self._configuration.authentication.pswd_password
 
         client = SAPClient(server_url, username, password, "", verify=False)
-        sources = asyncio.run(client.list_sources())
+
+        try:
+            sources = asyncio.run(client.list_sources())
+        except SapClientException as e:
+            raise UserException(f"An error occurred while fetching list of resources: {e}")
 
         return [
             SelectElement(
