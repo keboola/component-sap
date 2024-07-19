@@ -1,4 +1,5 @@
 import asyncio
+from functools import wraps
 import json
 import logging
 from typing import Union
@@ -15,8 +16,24 @@ class SapClientException(Exception):
     pass
 
 
+def set_timeout(timeout):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            original_timeout = self.client.timeout
+            self.client.timeout = timeout
+            try:
+                result = await func(self, *args, **kwargs)
+            finally:
+                self.client.timeout = original_timeout
+            return result
+        return wrapper
+    return decorator
+
+
 DEFAULT_LIMIT = 10_000
 DEFAULT_BATCH_SIZE = 2
+DEFAULT_TIMEOUT = 60
 
 
 class SAPClient(AsyncHttpClient):
@@ -39,8 +56,8 @@ class SAPClient(AsyncHttpClient):
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
-        super().__init__(server_url, auth=auth, default_headers=default_headers, retries=2,
-                         retry_status_codes=[503, 500], verify_ssl=verify)
+        super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
 
         self.destination = destination
         self.limit = limit
@@ -55,8 +72,13 @@ class SAPClient(AsyncHttpClient):
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
             self.delta_values.append(self.delta)
 
+    @set_timeout(5)
     async def list_sources(self):
-        r = await self._get(self.DATA_SOURCES_ENDPOINT)
+        try:
+            r = await self._get(self.DATA_SOURCES_ENDPOINT)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise SapClientException("Unable to list sources. Check the connection to the server.")
+
         sources = r.get("DATA_SOURCES", [])
 
         if sources:
@@ -90,6 +112,7 @@ class SAPClient(AsyncHttpClient):
 
     async def validate_source(self, resource_alias: str):
         sources = await self.list_sources()
+
         is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
         if not is_source_present:
             raise SapClientException(f"{resource_alias} resource is not available.")

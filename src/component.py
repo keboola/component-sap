@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 import json
 import logging
 from typing import Union
@@ -169,7 +170,12 @@ class Component(ComponentBase):
         password = self._configuration.authentication.pswd_password
 
         client = SAPClient(server_url, username, password, "", verify=False)
-        sources = asyncio.run(client.list_sources())
+
+        try:
+            sources = asyncio.run(client.list_sources())
+        except SapClientException as e:
+            detailed_error = traceback.format_exc()
+            raise UserException(f"An error occurred while fetching list of resources: {e}\nDetails:\n{detailed_error}")
 
         return [
             SelectElement(
