@@ -172,6 +172,8 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
 
+        raise UserException("Test")
+
         client = SAPClient(server_url, username, password, "", verify=False)
 
         try:
@@ -180,7 +182,6 @@ class Component(ComponentBase):
             detailed_error = traceback.format_exc()
             raise UserException(f"An error occurred while fetching list of resources: {e}\nDetails:\n{detailed_error}")
 
-        raise UserException("Test")
 
         return [
             SelectElement(
