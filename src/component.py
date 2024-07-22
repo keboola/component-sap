@@ -28,7 +28,7 @@ class Component(ComponentBase):
         """
         Main execution code
         """
-        self.list_resources()
+        logging.info(self.list_resources())
         exit()
 
         self._init_configuration()
