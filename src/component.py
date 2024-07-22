@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from typing import Union
+import traceback
 import os
 import shutil
 
@@ -27,6 +28,9 @@ class Component(ComponentBase):
         """
         Main execution code
         """
+        self.list_resources()
+        exit()
+
         self._init_configuration()
         self.state = self.get_state_file()
 
@@ -172,8 +176,9 @@ class Component(ComponentBase):
 
         try:
             sources = asyncio.run(client.list_sources())
-        except SapClientException:
-            raise UserException("An error occurred while fetching list of resources.")
+        except SapClientException as e:
+            detailed_error = traceback.format_exc()
+            raise UserException(f"An error occurred while fetching list of resources: {e}\nDetails:\n{detailed_error}")
 
         return [
             SelectElement(
