@@ -33,7 +33,7 @@ def set_timeout(timeout):
 
 DEFAULT_LIMIT = 10_000
 DEFAULT_BATCH_SIZE = 2
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 300
 
 
 class SAPClient(AsyncHttpClient):
@@ -298,8 +298,11 @@ class SAPClient(AsyncHttpClient):
 
         try:
             return await self.get(endpoint, params=params)
+        except httpx.ReadTimeout:
+            raise SapClientException(f"Maximum timeout of {DEFAULT_TIMEOUT} seconds reached while fetching data"
+                                     f" from {endpoint}.")
         except httpx.ConnectError as e:
-            raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
+            raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
 
     @staticmethod
     def _join_url_parts(*parts) -> str:
