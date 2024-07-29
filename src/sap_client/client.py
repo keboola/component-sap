@@ -58,7 +58,7 @@ class SAPClient(AsyncHttpClient):
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=self.debug)
 
         self.destination = destination
         self.limit = limit
@@ -68,7 +68,6 @@ class SAPClient(AsyncHttpClient):
         self.batch_size = batch_size
         self.stop = False
         self.metadata = {}
-        self.debug = debug
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
