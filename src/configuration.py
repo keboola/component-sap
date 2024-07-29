@@ -72,6 +72,7 @@ class Configuration(ConfigurationBase):
     authentication: Authentication
     source: Source
     destination: Destination
+    debug: bool = False
 
 
 @dataclass

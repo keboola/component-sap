@@ -41,7 +41,8 @@ class SAPClient(AsyncHttpClient):
     METADATA_ENDPOINT = "$metadata"
 
     def __init__(self, server_url: str, username: str, password: str, destination: str, limit: int = DEFAULT_LIMIT,
-                 delta: Union[bool, int] = False, batch_size: int = DEFAULT_BATCH_SIZE, verify: bool = True):
+                 delta: Union[bool, int] = False, batch_size: int = DEFAULT_BATCH_SIZE, verify: bool = True,
+                 debug=False):
         """Implements SAP client for fetching data from SAP Data Sources.
         Args:
             server_url: SAP server url.
@@ -57,7 +58,7 @@ class SAPClient(AsyncHttpClient):
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=True)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
 
         self.destination = destination
         self.limit = limit
@@ -67,6 +68,7 @@ class SAPClient(AsyncHttpClient):
         self.batch_size = batch_size
         self.stop = False
         self.metadata = {}
+        self.debug = debug
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
@@ -288,7 +290,9 @@ class SAPClient(AsyncHttpClient):
         if params is None:
             params = {}
 
-        logging.debug(f"Fetching data from {endpoint} with params: {params}")
+        if self.debug:
+            # workaround for debug logging not working properly
+            logging.info(f"Fetching data from {endpoint} with params: {params}")
 
         try:
             return await self.get(endpoint, params=params)
