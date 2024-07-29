@@ -44,6 +44,7 @@ class Component(ComponentBase):
         sync_type = self._configuration.source.sync_type
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
+        debug = self._configuration.debug
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -59,7 +60,8 @@ class Component(ComponentBase):
                            limit=limit,
                            batch_size=batch_size,
                            delta=previous_delta_max,
-                           verify=False)
+                           verify=False,
+                           debug=debug)
 
         output_table_name = output_table_name or resource_alias
         incremental = load_type != "full_load"
