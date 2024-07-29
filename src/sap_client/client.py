@@ -56,12 +56,9 @@ class SAPClient(AsyncHttpClient):
         """
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
-        self.debug = debug
-        if debug:
-            logging.debug("Debug mode is enabled.")
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=self.debug)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=debug)
 
         self.destination = destination
         self.limit = limit
@@ -291,10 +288,6 @@ class SAPClient(AsyncHttpClient):
     async def _get(self, endpoint: str, params=None) -> dict:
         if params is None:
             params = {}
-
-        if self.debug:
-            # workaround for debug logging not working properly
-            logging.info(f"Fetching data from {endpoint} with params: {params}")
 
         try:
             return await self.get(endpoint, params=params)
