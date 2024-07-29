@@ -56,9 +56,10 @@ class SAPClient(AsyncHttpClient):
         """
         auth = (username, password)
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
+        self.debug = debug
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=debug)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=self.debug)
 
         self.destination = destination
         self.limit = limit
