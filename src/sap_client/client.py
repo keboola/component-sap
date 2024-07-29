@@ -57,7 +57,7 @@ class SAPClient(AsyncHttpClient):
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=True)
 
         self.destination = destination
         self.limit = limit
@@ -288,8 +288,9 @@ class SAPClient(AsyncHttpClient):
         if params is None:
             params = {}
 
+        logging.debug(f"Fetching data from {endpoint} with params: {params}")
+
         try:
-            logging.debug(f"Fetching data from {endpoint} with params: {params}")
             return await self.get(endpoint, params=params)
         except httpx.ConnectError as e:
             raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
