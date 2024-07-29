@@ -289,6 +289,7 @@ class SAPClient(AsyncHttpClient):
             params = {}
 
         try:
+            logging.debug(f"Fetching data from {endpoint} with params: {params}")
             return await self.get(endpoint, params=params)
         except httpx.ConnectError as e:
             raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
