@@ -33,7 +33,7 @@ def set_timeout(timeout):
 
 DEFAULT_LIMIT = 10_000
 DEFAULT_BATCH_SIZE = 2
-DEFAULT_TIMEOUT = 3000
+DEFAULT_TIMEOUT = 120
 
 
 class SAPClient(AsyncHttpClient):
