@@ -33,7 +33,7 @@ def set_timeout(timeout):
 
 DEFAULT_LIMIT = 10_000
 DEFAULT_BATCH_SIZE = 2
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 120
 
 
 class SAPClient(AsyncHttpClient):
@@ -58,7 +58,7 @@ class SAPClient(AsyncHttpClient):
         default_headers = {'Accept-Encoding': 'gzip, deflate'}
 
         super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
+                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT, debug=debug)
 
         self.destination = destination
         self.limit = limit
@@ -68,7 +68,6 @@ class SAPClient(AsyncHttpClient):
         self.batch_size = batch_size
         self.stop = False
         self.metadata = {}
-        self.debug = debug
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
@@ -290,14 +289,13 @@ class SAPClient(AsyncHttpClient):
         if params is None:
             params = {}
 
-        if self.debug:
-            # workaround for debug logging not working properly
-            logging.info(f"Fetching data from {endpoint} with params: {params}")
-
         try:
             return await self.get(endpoint, params=params)
+        except httpx.ReadTimeout:
+            raise SapClientException(f"Maximum timeout of {DEFAULT_TIMEOUT} seconds reached while fetching data"
+                                     f" from {endpoint}.")
         except httpx.ConnectError as e:
-            raise SapClientException(f"Cannot connect to {endpoint}, exception: {e}")
+            raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
 
     @staticmethod
     def _join_url_parts(*parts) -> str:

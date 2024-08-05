@@ -174,8 +174,8 @@ class Component(ComponentBase):
 
         try:
             sources = asyncio.run(client.list_sources())
-        except SapClientException:
-            raise UserException("An error occurred while fetching list of resources.")
+        except SapClientException as e:
+            raise UserException(f"An error occurred while fetching list of resources: {e}")
 
         return [
             SelectElement(
