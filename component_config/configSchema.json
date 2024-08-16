@@ -28,6 +28,12 @@
           "format": "password",
           "title": "Password",
           "propertyOrder": 3
+        },
+        "verify": {
+          "type": "boolean",
+          "title": "Verify SSL Certificate",
+          "description": "Enables or disables SSL certificate verification",
+          "propertyOrder": 4
         }
       }
     }
