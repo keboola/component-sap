@@ -41,6 +41,7 @@ class Component(ComponentBase):
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
         debug = self._configuration.debug
+        verify_ssl = self._configuration.authentication.verify_ssl
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -56,7 +57,7 @@ class Component(ComponentBase):
                            limit=limit,
                            batch_size=batch_size,
                            delta=previous_delta_max,
-                           verify=False,
+                           verify=verify_ssl,
                            debug=debug)
 
         output_table_name = output_table_name or resource_alias
@@ -169,8 +170,9 @@ class Component(ComponentBase):
         server_url = self._configuration.authentication.server_url
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
+        verify_ssl = self._configuration.authentication.verify_ssl
 
-        client = SAPClient(server_url, username, password, "", verify=False)
+        client = SAPClient(server_url, username, password, "", verify=verify_ssl)
 
         try:
             sources = asyncio.run(client.list_sources())
