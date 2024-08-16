@@ -170,7 +170,7 @@ class Component(ComponentBase):
         server_url = self._configuration.authentication.server_url
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
-        verify = self._configuration.authentication.verify_ssl
+        verify = self._configuration.authentication.verify
 
         client = SAPClient(server_url, username, password, "", verify=verify)
 
