@@ -50,7 +50,7 @@ class Authentication(ConfigurationBase):
     server_url: str
     username: str
     pswd_password: str
-    verify_ssl: bool = False
+    verify: bool = False
 
 
 @dataclass

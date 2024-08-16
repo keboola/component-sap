@@ -29,9 +29,9 @@
           "title": "Password",
           "propertyOrder": 3
         },
-        "verify_ssl": {
+        "verify": {
           "type": "boolean",
-          "title": "Verify SSL",
+          "title": "Verify SSL Certificate",
           "description": "Enables or disables SSL certificate verification",
           "propertyOrder": 4
         }
