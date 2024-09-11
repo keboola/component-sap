@@ -271,7 +271,9 @@ class SAPClient(AsyncHttpClient):
                 except ValueError:
                     raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
                                              f"Delta pointer received: {delta_pointer}")
+            logging.info(f"Current delta pointer: {delta_pointer}.")
             self.delta_values.append(delta_pointer)
+        logging.warning("No delta pointer was received.")
 
     async def _get_resource_metadata(self, resource) -> dict:
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
