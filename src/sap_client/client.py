@@ -263,6 +263,7 @@ class SAPClient(AsyncHttpClient):
 
     def _set_delta_pointer(self, entity: dict) -> None:
         if delta_pointer := entity.get("DELTA_POINTER"):
+            logging.debug(f"Delta pointer received: {delta_pointer}")
             try:
                 delta_pointer = int(delta_pointer)
             except ValueError:
@@ -272,6 +273,8 @@ class SAPClient(AsyncHttpClient):
                     raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
                                              f"Delta pointer received: {delta_pointer}")
             self.delta_values.append(delta_pointer)
+        else:
+            logging.debug("No delta pointer received.")
 
     async def _get_resource_metadata(self, resource) -> dict:
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
@@ -308,4 +311,5 @@ class SAPClient(AsyncHttpClient):
 
     @property
     def max_delta_pointer(self) -> Union[int, str, None]:
+        logging.debug(f"Client Delta values: {self.delta_values}")
         return max(self.delta_values, default=None)
