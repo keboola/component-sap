@@ -27,7 +27,9 @@ def set_timeout(timeout):
             finally:
                 self.client.timeout = original_timeout
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -312,4 +314,15 @@ class SAPClient(AsyncHttpClient):
     @property
     def max_delta_pointer(self) -> Union[int, str, None]:
         logging.debug(f"Client Delta values: {self.delta_values}")
-        return max(self.delta_values, default=None)
+        return self._max_timestamp_or_id(self.delta_values)
+
+    @staticmethod
+    def _max_timestamp_or_id(values: list):
+        if not values:
+            return None
+        # sometimes can come different length of values, so we need to normalize them
+        max_length = max(len(str(value)) for value in values)
+        normalized_data = [str(value).ljust(max_length, '0') for value in values]
+        max_normalized = max(normalized_data)
+        max_value = values[normalized_data.index(max_normalized)]
+        return max_value
