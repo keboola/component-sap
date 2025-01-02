@@ -27,7 +27,9 @@ def set_timeout(timeout):
             finally:
                 self.client.timeout = original_timeout
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -263,6 +265,7 @@ class SAPClient(AsyncHttpClient):
 
     def _set_delta_pointer(self, entity: dict) -> None:
         if delta_pointer := entity.get("DELTA_POINTER"):
+            logging.debug(f"Delta pointer received: {delta_pointer}")
             try:
                 delta_pointer = int(delta_pointer)
             except ValueError:
@@ -272,6 +275,8 @@ class SAPClient(AsyncHttpClient):
                     raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
                                              f"Delta pointer received: {delta_pointer}")
             self.delta_values.append(delta_pointer)
+        else:
+            logging.debug("No delta pointer received.")
 
     async def _get_resource_metadata(self, resource) -> dict:
         endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
@@ -308,4 +313,16 @@ class SAPClient(AsyncHttpClient):
 
     @property
     def max_delta_pointer(self) -> Union[int, str, None]:
-        return max(self.delta_values, default=None)
+        logging.debug(f"Client Delta values: {self.delta_values}")
+        return self._max_timestamp_or_id(self.delta_values)
+
+    @staticmethod
+    def _max_timestamp_or_id(values: list):
+        if not values:
+            return None
+        # sometimes can come different length of values, so we need to normalize them
+        max_length = max(len(str(value)) for value in values)
+        normalized_data = [str(value).ljust(max_length, '0') for value in values]
+        max_normalized = max(normalized_data)
+        max_value = values[normalized_data.index(max_normalized)]
+        return max_value
