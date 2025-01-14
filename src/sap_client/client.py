@@ -80,7 +80,8 @@ class SAPClient(AsyncHttpClient):
     async def list_sources(self):
         try:
             r = await self._get(self.DATA_SOURCES_ENDPOINT)
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+        except Exception as e:
+            logging.error("Unable to list sources. Exception: %s", e)
             raise SapClientException("Unable to list sources. Check the connection to the server.")
 
         sources = r.get("DATA_SOURCES", [])
