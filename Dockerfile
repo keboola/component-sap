@@ -1,19 +1,18 @@
-FROM python:3.12-slim
-ENV PYTHONIOENCODING utf-8
+FROM python:3.13-slim
 
 RUN apt-get update && apt-get install -y git
 
-COPY requirements.txt /code/requirements.txt
-RUN pip install -r /code/requirements.txt
-
-COPY flake8.cfg /code/flake8.cfg
 RUN pip install flake8
 
-COPY /src /code/src/
-COPY /tests /code/tests/
-COPY /scripts /code/scripts/
-COPY deploy.sh /code/deploy.sh
-
 WORKDIR /code/
+COPY requirements.txt .
+
+RUN pip install -r requirements.txt
+
+COPY src/ src
+COPY tests/ tests
+COPY scripts/ scripts
+COPY flake8.cfg .
+COPY deploy.sh .
 
 CMD ["python", "-u", "/code/src/component.py"]
