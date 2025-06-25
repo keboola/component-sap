@@ -1,12 +1,12 @@
 import asyncio
-from functools import wraps
 import json
 import logging
-from typing import Union
 import os
 import uuid
-import httpx
+from functools import wraps
+from typing import Union
 
+import httpx
 from keboola.http_client import AsyncHttpClient
 
 from .data_source_model import DataSource
@@ -33,18 +33,24 @@ def set_timeout(timeout):
     return decorator
 
 
-DEFAULT_LIMIT = 10_000
-DEFAULT_BATCH_SIZE = 2
-DEFAULT_TIMEOUT = 1800
-
-
 class SAPClient(AsyncHttpClient):
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
-    def __init__(self, server_url: str, username: str, password: str, destination: str, limit: int = DEFAULT_LIMIT,
-                 delta: Union[bool, int] = False, batch_size: int = DEFAULT_BATCH_SIZE, verify: bool = True,
-                 debug=False):
+    def __init__(
+        self,
+        server_url: str,
+        username: str,
+        password: str,
+        destination: str,
+        timeout: int,
+        retries: int,
+        verify: bool,
+        limit: int,
+        batch_size: int,
+        delta: Union[bool, int] = False,
+        debug=False,
+    ):
         """Implements SAP client for fetching data from SAP Data Sources.
         Args:
             server_url: SAP server url.
@@ -57,24 +63,36 @@ class SAPClient(AsyncHttpClient):
             verify: Verify SSL certificate.
         """
         auth = (username, password)
-        default_headers = {'Accept-Encoding': 'gzip, deflate'}
+        default_headers = {"Accept-Encoding": "gzip, deflate"}
 
-        super().__init__(server_url, auth=auth, default_headers=default_headers, retries=3,
-                         retry_status_codes=[503, 500], verify_ssl=verify, timeout=DEFAULT_TIMEOUT)
+        super().__init__(
+            server_url,
+            auth=auth,
+            default_headers=default_headers,
+            retries=retries,
+            retry_status_codes=(500, 503),
+            timeout=timeout,
+            verify_ssl=verify,
+        )
 
         self.destination = destination
+
+        self.timeout = timeout
+        self.verify = verify
+
         self.limit = limit
+        self.batch_size = batch_size
+
         self.delta = delta
         self.delta_values = []
-        self.verify = verify
-        self.batch_size = batch_size
-        self.stop = False
-        self.metadata = {}
         self.debug = debug
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
             self.delta_values.append(self.delta)
+
+        self.stop = False
+        self.metadata = {}
 
     @set_timeout(5)
     async def list_sources(self):
@@ -87,12 +105,15 @@ class SAPClient(AsyncHttpClient):
 
         if sources:
             sources = [
-                {'SOURCE_ALIAS': source['SOURCE_ALIAS'],
-                 'SOURCE_TEXT': source['SOURCE_TEXT'],
-                 'PAGING': source['PAGING'],
-                 'SOURCE_TYPE': source['SOURCE_TYPE'],
-                 'DELTA': source['DELTA']
-                 } for source in sources]
+                {
+                    "SOURCE_ALIAS": source["SOURCE_ALIAS"],
+                    "SOURCE_TEXT": source["SOURCE_TEXT"],
+                    "PAGING": source["PAGING"],
+                    "SOURCE_TYPE": source["SOURCE_TYPE"],
+                    "DELTA": source["DELTA"],
+                }
+                for source in sources
+            ]
 
         return sources
 
@@ -111,13 +132,15 @@ class SAPClient(AsyncHttpClient):
             await self.fetch_with_paging(resource_alias, paging_method)
         else:
             await self.fetch_and_store_full(resource_alias)
-            logging.info(f"Resource {resource_alias} does not support paging. "
-                         f"The component will try to fetch the data in one request.")
+            logging.info(
+                f"Resource {resource_alias} does not support paging. "
+                f"The component will try to fetch the data in one request."
+            )
 
     async def validate_source(self, resource_alias: str):
         sources = await self.list_sources()
 
-        is_source_present = any(s['SOURCE_ALIAS'] == resource_alias for s in sources)
+        is_source_present = any(s["SOURCE_ALIAS"] == resource_alias for s in sources)
         if not is_source_present:
             raise SapClientException(f"{resource_alias} resource is not available.")
         logging.info(f"{resource_alias} resource will be fetched.")
@@ -143,10 +166,7 @@ class SAPClient(AsyncHttpClient):
             raise SapClientException(f"Unsupported paging method: {paging_method}")
 
     async def _fetch_paging_offset(self, resource_alias: str, page: int = 0):
-        params = {
-            "page": page if page else 1,
-            "limit": self.limit
-        }
+        params = {"page": page if page else 1, "limit": self.limit}
         tasks = []
 
         while not self.stop:
@@ -163,9 +183,7 @@ class SAPClient(AsyncHttpClient):
             tasks.clear()
 
     async def _fetch_paging_key(self, resource_alias: str):
-        params = {
-            "limit": self.limit
-        }
+        params = {"limit": self.limit}
 
         # get blocks
         endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$key_blocks")
@@ -177,10 +195,7 @@ class SAPClient(AsyncHttpClient):
         tasks = []
 
         for block in blocks:
-            params = {
-                "key_min": block.get("KEY_MIN"),
-                "key_max": block.get("KEY_MAX")
-            }
+            params = {"key_min": block.get("KEY_MIN"), "key_max": block.get("KEY_MAX")}
             endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias)
             tasks.append(self._get_and_process(endpoint, params.copy()))
 
@@ -272,8 +287,10 @@ class SAPClient(AsyncHttpClient):
                 try:
                     delta_pointer = float(delta_pointer)
                 except ValueError:
-                    raise SapClientException(f"Only integer and float {delta_pointer} values are supported. "
-                                             f"Delta pointer received: {delta_pointer}")
+                    raise SapClientException(
+                        f"Only integer and float {delta_pointer} values are supported. "
+                        f"Delta pointer received: {delta_pointer}"
+                    )
             self.delta_values.append(delta_pointer)
         else:
             logging.debug("No delta pointer received.")
@@ -289,7 +306,7 @@ class SAPClient(AsyncHttpClient):
 
     @staticmethod
     def _get_columns(columns_specification: list):
-        return [item['COLUMN_ALIAS'] for item in sorted(columns_specification, key=lambda x: x['POSITION'])]
+        return [item["COLUMN_ALIAS"] for item in sorted(columns_specification, key=lambda x: x["POSITION"])]
 
     async def _get(self, endpoint: str, params=None) -> dict:
         if params is None:
@@ -302,8 +319,9 @@ class SAPClient(AsyncHttpClient):
         try:
             return await self.get(endpoint, params=params)
         except httpx.ReadTimeout:
-            raise SapClientException(f"Maximum timeout of {DEFAULT_TIMEOUT} seconds reached while fetching data"
-                                     f" from {endpoint}.")
+            raise SapClientException(
+                f"Maximum timeout of {self.timeout} seconds reached while fetching data from {endpoint}."
+            )
         except httpx.ConnectError as e:
             raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
 
@@ -322,7 +340,7 @@ class SAPClient(AsyncHttpClient):
             return None
         # sometimes can come different length of values, so we need to normalize them
         max_length = max(len(str(value)) for value in values)
-        normalized_data = [str(value).ljust(max_length, '0') for value in values]
+        normalized_data = [str(value).ljust(max_length, "0") for value in values]
         max_normalized = max(normalized_data)
         max_value = values[normalized_data.index(max_normalized)]
         return max_value
