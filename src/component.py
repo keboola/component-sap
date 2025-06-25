@@ -1,19 +1,19 @@
 import asyncio
 import json
 import logging
-from typing import Union
 import os
 import shutil
+from typing import Union
 
 from keboola.component.base import ComponentBase, sync_action
-from keboola.csvwriter import ElasticDictWriter
+from keboola.component.dao import TableDefinition
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
-from keboola.component.dao import TableDefinition
+from keboola.csvwriter import ElasticDictWriter
 
+from configuration import Configuration, SyncActionConfiguration
 from sap_client.client import SAPClient, SapClientException
 from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
-from configuration import Configuration, SyncActionConfiguration
 
 
 class Component(ComponentBase):
@@ -30,17 +30,21 @@ class Component(ComponentBase):
         self.state = self.get_state_file()
 
         server_url = self._configuration.authentication.server_url
+        username = self._configuration.authentication.username
+        password = self._configuration.authentication.pswd_password
+        verify = self._configuration.authentication.verify
+        timeout = self._configuration.authentication.timeout
+        retries = self._configuration.authentication.retries
+
         resource_alias = self._configuration.source.resource_alias
         limit = self._configuration.source.limit
         batch_size = self._configuration.source.batch_size
-        username = self._configuration.authentication.username
-        password = self._configuration.authentication.pswd_password
         paging_method = self._configuration.source.paging_method
         sync_type = self._configuration.source.sync_type
+
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
         debug = self._configuration.debug
-        verify = self._configuration.authentication.verify
 
         temp_dir = os.path.join(self.data_folder_path, "temp")
         os.makedirs(temp_dir, exist_ok=True)
@@ -54,10 +58,12 @@ class Component(ComponentBase):
             username=username,
             password=password,
             destination=temp_dir,
+            timeout=timeout,
+            retries=retries,
+            verify=verify,
             limit=limit,
             batch_size=batch_size,
             delta=previous_delta_max,
-            verify=verify,
             debug=debug,
         )
 
@@ -132,7 +138,11 @@ class Component(ComponentBase):
                 length = str(col_md.get("LENGTH"))
             else:
                 length = None
-            out_table.table_metadata.add_column_data_type(column=column, data_type=datatype, length=length)
+            out_table.table_metadata.add_column_data_type(
+                column=column,
+                data_type=datatype,
+                length=length,
+            )
 
             if col_md.get("KEY"):
                 pks.append(column)
@@ -177,8 +187,23 @@ class Component(ComponentBase):
         username = self._configuration.authentication.username
         password = self._configuration.authentication.pswd_password
         verify = self._configuration.authentication.verify
+        timeout = self._configuration.authentication.timeout
+        retries = self._configuration.authentication.retries
 
-        client = SAPClient(server_url, username, password, "", verify=verify)
+        limit = self._configuration.source.limit
+        batch_size = self._configuration.source.batch_size
+
+        client = SAPClient(
+            server_url,
+            username,
+            password,
+            "",
+            timeout,
+            retries,
+            verify,
+            limit,
+            batch_size,
+        )
 
         try:
             sources = asyncio.run(client.list_sources())
@@ -186,7 +211,10 @@ class Component(ComponentBase):
             raise UserException(f"An error occurred while fetching list of resources: {e}")
 
         return [
-            SelectElement(label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}", value=s["SOURCE_ALIAS"])
+            SelectElement(
+                label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}",
+                value=s["SOURCE_ALIAS"],
+            )
             for s in sources
         ]
 

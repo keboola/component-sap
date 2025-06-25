@@ -4,7 +4,7 @@
   "properties": {
     "authentication": {
       "type": "object",
-      "title": "Authentication",
+      "title": "Authentication & Connection Settings",
       "required": [
         "server_url",
         "username",
@@ -15,7 +15,7 @@
         "server_url": {
           "type": "string",
           "title": "Server URL",
-          "description": "For example: https://sapserver.provider.cz:45300/sap/bc/http/sap/YACTUM_DP",
+          "description": "Example: https://sapserver.provider.cz:45300/sap/bc/http/sap/YACTUM_DP",
           "propertyOrder": 1
         },
         "username": {
@@ -34,6 +34,20 @@
           "title": "Verify SSL Certificate",
           "description": "Enables or disables SSL certificate verification",
           "propertyOrder": 4
+        },
+        "timeout": {
+          "type": "number",
+          "title": "Timeout",
+          "description": "Request timeout in seconds",
+          "default": 1800,
+          "propertyOrder": 5
+        },
+        "retries": {
+          "type": "number",
+          "title": "Retries",
+          "description": "Number of retries before giving up after a failed request",
+          "default": 3,
+          "propertyOrder": 6
         }
       }
     }
