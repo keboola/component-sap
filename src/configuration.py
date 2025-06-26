@@ -7,6 +7,9 @@ import dataconf
 
 
 class ConfigurationBase:
+    DEFAULT_LIMIT = 10_000
+    DEFAULT_BATCH_SIZE = 2
+
     @staticmethod
     def _convert_private_value(value: str):
         return value.replace('"#', '"pswd_')
@@ -61,8 +64,8 @@ class Source(ConfigurationBase):
     resource_alias: str
     sync_type: str
     paging_method: str
-    limit: int = 10_000
-    batch_size: int = 2
+    limit: int = ConfigurationBase.DEFAULT_LIMIT
+    batch_size: int = ConfigurationBase.DEFAULT_BATCH_SIZE
 
 
 @dataclass
@@ -82,4 +85,3 @@ class Configuration(ConfigurationBase):
 @dataclass
 class SyncActionConfiguration(ConfigurationBase):
     authentication: Authentication
-    source: Source

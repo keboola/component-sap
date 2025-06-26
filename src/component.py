@@ -11,7 +11,7 @@ from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
 from keboola.csvwriter import ElasticDictWriter
 
-from configuration import Configuration, SyncActionConfiguration
+from configuration import Configuration, ConfigurationBase, SyncActionConfiguration
 from sap_client.client import SAPClient, SapClientException
 from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
 
@@ -190,9 +190,6 @@ class Component(ComponentBase):
         timeout = self._configuration.authentication.timeout
         retries = self._configuration.authentication.retries
 
-        limit = self._configuration.source.limit
-        batch_size = self._configuration.source.batch_size
-
         client = SAPClient(
             server_url,
             username,
@@ -201,8 +198,8 @@ class Component(ComponentBase):
             timeout,
             retries,
             verify,
-            limit,
-            batch_size,
+            ConfigurationBase.DEFAULT_LIMIT,
+            ConfigurationBase.DEFAULT_BATCH_SIZE,
         )
 
         try:
