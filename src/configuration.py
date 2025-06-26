@@ -82,3 +82,4 @@ class Configuration(ConfigurationBase):
 @dataclass
 class SyncActionConfiguration(ConfigurationBase):
     authentication: Authentication
+    source: Source
