@@ -17,7 +17,6 @@ from configuration import Configuration, SyncActionConfiguration
 
 
 class Component(ComponentBase):
-
     def __init__(self):
         super().__init__()
         self._configuration: Configuration
@@ -50,15 +49,17 @@ class Component(ComponentBase):
 
         previous_delta_max = self._init_delta(sync_type, resource_alias)
 
-        client = SAPClient(server_url=server_url,
-                           username=username,
-                           password=password,
-                           destination=temp_dir,
-                           limit=limit,
-                           batch_size=batch_size,
-                           delta=previous_delta_max,
-                           verify=verify,
-                           debug=debug)
+        client = SAPClient(
+            server_url=server_url,
+            username=username,
+            password=password,
+            destination=temp_dir,
+            limit=limit,
+            batch_size=batch_size,
+            delta=previous_delta_max,
+            verify=verify,
+            debug=debug,
+        )
 
         output_table_name = output_table_name or resource_alias
         incremental = load_type != "full_load"
@@ -66,11 +67,16 @@ class Component(ComponentBase):
         out_table = self.create_out_table_definition(name=output_table_name, incremental=incremental)
 
         try:
-            asyncio.run(
-                client.fetch(resource_alias, paging_method)
-            )
+            asyncio.run(client.fetch(resource_alias, paging_method))
         except SapClientException as e:
-            raise UserException(f"An error occurred while fetching resource: {e}")
+            error_msg = str(e)
+            if "TYPE_NOT_FOUND" in error_msg:
+                raise UserException(
+                    f"Failed to load table {resource_alias} due to invalid data type. "
+                    f"Please check if the table structure in SAP is valid."
+                )
+            else:
+                raise UserException(f"An error occurred while fetching resource: {e}")
 
         files = os.listdir(temp_dir)
 
@@ -79,7 +85,7 @@ class Component(ComponentBase):
                 wr.writeheader()
                 for json_file in files:
                     json_file_path = os.path.join(temp_dir, json_file)
-                    with open(json_file_path, 'r') as file:
+                    with open(json_file_path, "r") as file:
                         content = json.load(file)
                         for row in content:
                             wr.writerow(self._ensure_proper_column_names(row))
@@ -108,8 +114,10 @@ class Component(ComponentBase):
             previous_delta_max = self.state.get(resource_alias, {}).get("delta_max", False)
 
             if not previous_delta_max:
-                logging.warning("Delta sync is enabled, but no previous delta pointer was found in state file. "
-                                "Full sync will be performed.")
+                logging.warning(
+                    "Delta sync is enabled, but no previous delta pointer was found in state file. "
+                    "Full sync will be performed."
+                )
 
         return previous_delta_max
 
@@ -124,9 +132,7 @@ class Component(ComponentBase):
                 length = str(col_md.get("LENGTH"))
             else:
                 length = None
-            out_table.table_metadata.add_column_data_type(column=column,
-                                                          data_type=datatype,
-                                                          length=length)
+            out_table.table_metadata.add_column_data_type(column=column, data_type=datatype, length=length)
 
             if col_md.get("KEY"):
                 pks.append(column)
@@ -159,7 +165,7 @@ class Component(ComponentBase):
         """
         transformed_dict = {}
         for key, value in original_dict.items():
-            new_key = key.lstrip('/').replace('/', '_')
+            new_key = key.lstrip("/").replace("/", "_")
             transformed_dict[new_key] = value
         return transformed_dict
 
@@ -180,10 +186,7 @@ class Component(ComponentBase):
             raise UserException(f"An error occurred while fetching list of resources: {e}")
 
         return [
-            SelectElement(
-                label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}",
-                value=s['SOURCE_ALIAS']
-            )
+            SelectElement(label=f"name: {s['SOURCE_TEXT']}, type: {s['SOURCE_TYPE']}", value=s["SOURCE_ALIAS"])
             for s in sources
         ]
 
