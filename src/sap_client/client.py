@@ -318,7 +318,7 @@ class SAPClient(AsyncHttpClient):
             return await self.get(endpoint, params=params)
         except httpx.ReadTimeout:
             raise SapClientException(
-                f"Maximum timeout of {self.timeout} seconds reached while fetching data from {endpoint}."
+                f"Maximum timeout of {self.client.timeout} seconds reached while fetching data from {endpoint}."
             )
         except httpx.ConnectError as e:
             raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
