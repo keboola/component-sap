@@ -318,6 +318,9 @@ class SAPClient(AsyncHttpClient):
             return await self.get(endpoint, params=params)
         except httpx.ConnectError as e:
             raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error calling {endpoint}: {type(e).__name__}: {e}")
+            raise
 
     @staticmethod
     def _join_url_parts(*parts) -> str:
