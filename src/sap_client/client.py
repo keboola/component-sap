@@ -97,7 +97,7 @@ class SAPClient(AsyncHttpClient):
     @set_timeout(5)
     async def list_sources(self):
         try:
-            r = await self._get(self.DATA_SOURCES_ENDPOINT)
+            r = await self._fetch(self.DATA_SOURCES_ENDPOINT)
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise SapClientException("Unable to list sources. Check the connection to the server.")
 
@@ -181,7 +181,7 @@ class SAPClient(AsyncHttpClient):
 
         # get blocks
         endpoint = self._join_url_parts(self.DATA_SOURCES_ENDPOINT, resource_alias, "$key_blocks")
-        r = await self._get(endpoint, params=params)
+        r = await self._fetch(endpoint, params=params)
         blocks = r.get("DATA_SOURCE", {}).get("KEY_BLOCKS")
         if not blocks:
             raise SapClientException("Unable to obtain key blocks.")  # TODO: fallback to offset paging
@@ -212,7 +212,7 @@ class SAPClient(AsyncHttpClient):
         endpoint = self._get_data_sources_endpoint(resource_alias)
         params = self._get_request_params({})
 
-        response = await self._get(endpoint, params=params)
+        response = await self._fetch(endpoint, params=params)
         entities = response.get("DATA_SOURCE", {}).get("ENTITIES", [])
 
         if entities:
@@ -253,7 +253,7 @@ class SAPClient(AsyncHttpClient):
 
     async def _get_and_process(self, endpoint, params):
         """Helper method for async processing used with resources that support paging."""
-        r = await self._get(endpoint, params=params)
+        r = await self._fetch(endpoint, params=params)
         data_source = r.get("DATA_SOURCE", {})
         entities = data_source.get("ENTITIES", [])
 
@@ -292,7 +292,7 @@ class SAPClient(AsyncHttpClient):
     async def _get_resource_metadata(self, resource) -> dict:
         try:
             endpoint = f"{self.DATA_SOURCES_ENDPOINT}/{resource}/{self.METADATA_ENDPOINT}"
-            r = await self._get(endpoint)
+            r = await self._fetch(endpoint)
             return r.get("DATA_SOURCE")
         except SapClientException as e:
             logging.error(f"Failed to fetch metadata for resource {resource}: {str(e)}")
@@ -306,7 +306,8 @@ class SAPClient(AsyncHttpClient):
     def _get_columns(columns_specification: list):
         return [item["COLUMN_ALIAS"] for item in sorted(columns_specification, key=lambda x: x["POSITION"])]
 
-    async def _get(self, endpoint: str, params=None) -> dict:
+    async def _fetch(self, endpoint: str, params=None):
+        """Fetches data"""
         if params is None:
             params = {}
 
@@ -315,12 +316,16 @@ class SAPClient(AsyncHttpClient):
             logging.debug(f"Fetching data from {endpoint} with params: {params}")
 
         try:
-            return await self.get(endpoint, params=params)
-        except httpx.ConnectError as e:
-            raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
+           return await self._get(endpoint, params=params)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+           raise SapClientException(f"Failed to fetch data from endpoint {endpoint}: {str(e)}")
+        except httpx.ReadTimeout as e:
+            raise SapClientException(f"Request timed out after all retry attempts for endpoint {endpoint}")
         except Exception as e:
-            logging.error(f"Unexpected error calling {endpoint}: {type(e).__name__}: {e}")
-            raise
+            raise SapClientException(f"Failed to fetch data from {endpoint}: {str(e)}")
+
+    async def _get(self, endpoint: str, params=None) -> dict:
+            return await self.get(endpoint, params=params)
 
     @staticmethod
     def _join_url_parts(*parts) -> str:
