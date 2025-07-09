@@ -70,7 +70,7 @@ class SAPClient(AsyncHttpClient):
             auth=auth,
             default_headers=default_headers,
             retries=retries,
-            retry_status_codes=[500, 503],
+            retry_status_codes=[0, 500, 503],
             timeout=timeout,
             verify_ssl=verify,
         )
