@@ -38,18 +38,18 @@ class SAPClient(AsyncHttpClient):
     METADATA_ENDPOINT = "$metadata"
 
     def __init__(
-        self,
-        server_url: str,
-        username: str,
-        password: str,
-        destination: str,
-        timeout: int,
-        retries: int,
-        verify: bool,
-        limit: int,
-        batch_size: int,
-        delta: Union[bool, int] = False,
-        debug=False,
+            self,
+            server_url: str,
+            username: str,
+            password: str,
+            destination: str,
+            timeout: int,
+            retries: int,
+            verify: bool,
+            limit: int,
+            batch_size: int,
+            delta: Union[bool, int] = False,
+            debug=False,
     ):
         """Implements SAP client for fetching data from SAP Data Sources.
         Args:
@@ -316,16 +316,16 @@ class SAPClient(AsyncHttpClient):
             logging.debug(f"Fetching data from {endpoint} with params: {params}")
 
         try:
-           return await self._get(endpoint, params=params)
+            return await self._get(endpoint, params=params)
         except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-           raise SapClientException(f"Failed to fetch data from endpoint {endpoint}: {str(e)}")
+            raise SapClientException(f"Failed to fetch data from endpoint {endpoint}: {str(e)}")
         except httpx.ReadTimeout as e:
-            raise SapClientException(f"Request timed out after all retry attempts for endpoint {endpoint}")
+            raise SapClientException(f"Request timed out after all retry attempts for endpoint {endpoint}: {str(e)}")
         except Exception as e:
             raise SapClientException(f"Failed to fetch data from {endpoint}: {str(e)}")
 
     async def _get(self, endpoint: str, params=None) -> dict:
-            return await self.get(endpoint, params=params)
+        return await self.get(endpoint, params=params)
 
     @staticmethod
     def _join_url_parts(*parts) -> str:
