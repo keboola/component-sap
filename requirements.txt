@@ -2,9 +2,8 @@ keboola.component==1.4.3
 keboola.utils
 git+https://github.com/keboola/python-http-client.git@feature/async
 keboola.csvwriter
-mock~=5.2.0
-freezegun~=1.5.2
-dataconf~=3.4.0
+mock
+freezegun
+dataconf
 aiolimiter # not included yet in async client
 certifi==2024.7.4
-httpx~=0.28.1
