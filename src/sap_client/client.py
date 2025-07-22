@@ -294,7 +294,6 @@ class SAPClient(AsyncHttpClient):
             r = await self._get(endpoint)
             return r.get("DATA_SOURCE")
         except SapClientException as e:
-            logging.error(f"Failed to fetch metadata for resource {resource}: {str(e)}")
             raise SapClientException(f"Failed to fetch metadata for resource {resource}: {str(e)}")
 
     @staticmethod
