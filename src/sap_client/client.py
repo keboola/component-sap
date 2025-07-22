@@ -1,12 +1,12 @@
 import asyncio
-from functools import wraps
 import json
 import logging
-from typing import Union
 import os
 import uuid
-import httpx
+from functools import wraps
+from typing import Union
 
+import httpx
 from keboola.http_client import AsyncHttpClient
 
 from .data_source_model import DataSource
@@ -33,26 +33,23 @@ def set_timeout(timeout):
     return decorator
 
 
-DEFAULT_LIMIT = 10_000
-DEFAULT_BATCH_SIZE = 2
-DEFAULT_TIMEOUT = 1800
-
-
 class SAPClient(AsyncHttpClient):
     DATA_SOURCES_ENDPOINT = "DATA_SOURCES"
     METADATA_ENDPOINT = "$metadata"
 
     def __init__(
-        self,
-        server_url: str,
-        username: str,
-        password: str,
-        destination: str,
-        limit: int = DEFAULT_LIMIT,
-        delta: Union[bool, int] = False,
-        batch_size: int = DEFAULT_BATCH_SIZE,
-        verify: bool = True,
-        debug=False,
+            self,
+            server_url: str,
+            username: str,
+            password: str,
+            destination: str,
+            timeout: int,
+            retries: int,
+            verify: bool,
+            limit: int,
+            batch_size: int,
+            delta: Union[bool, int] = False,
+            debug=False,
     ):
         """Implements SAP client for fetching data from SAP Data Sources.
         Args:
@@ -72,25 +69,30 @@ class SAPClient(AsyncHttpClient):
             server_url,
             auth=auth,
             default_headers=default_headers,
-            retries=3,
-            retry_status_codes=[503, 500],
+            retries=retries,
+            retry_status_codes=[0, 500, 503],
+            timeout=timeout,
             verify_ssl=verify,
-            timeout=DEFAULT_TIMEOUT,
         )
 
         self.destination = destination
+
+        self.timeout = timeout
+        self.verify = verify
+
         self.limit = limit
+        self.batch_size = batch_size
+
         self.delta = delta
         self.delta_values = []
-        self.verify = verify
-        self.batch_size = batch_size
-        self.stop = False
-        self.metadata = {}
         self.debug = debug
 
         if self.delta:
             logging.info(f"Delta sync is enabled, delta pointer: {self.delta}.")
             self.delta_values.append(self.delta)
+
+        self.stop = False
+        self.metadata = {}
 
     @set_timeout(5)
     async def list_sources(self):
@@ -134,7 +136,6 @@ class SAPClient(AsyncHttpClient):
                     f"The component will try to fetch the data in one request."
                 )
         except SapClientException as e:
-            logging.error(f"Failed to load metadata for table {resource_alias}: {str(e)}")
             raise SapClientException(f"Failed to load metadata for table {resource_alias}: {str(e)}")
 
     async def check_delta_support(self, resource_alias: str, data_source: DataSource):
@@ -293,7 +294,6 @@ class SAPClient(AsyncHttpClient):
             r = await self._get(endpoint)
             return r.get("DATA_SOURCE")
         except SapClientException as e:
-            logging.error(f"Failed to fetch metadata for resource {resource}: {str(e)}")
             raise SapClientException(f"Failed to fetch metadata for resource {resource}: {str(e)}")
 
     @staticmethod
@@ -304,7 +304,8 @@ class SAPClient(AsyncHttpClient):
     def _get_columns(columns_specification: list):
         return [item["COLUMN_ALIAS"] for item in sorted(columns_specification, key=lambda x: x["POSITION"])]
 
-    async def _get(self, endpoint: str, params=None) -> dict:
+    async def _get(self, endpoint: str, params=None):
+        """Fetches data"""
         if params is None:
             params = {}
 
@@ -314,12 +315,12 @@ class SAPClient(AsyncHttpClient):
 
         try:
             return await self.get(endpoint, params=params)
-        except httpx.ReadTimeout:
-            raise SapClientException(
-                f"Maximum timeout of {DEFAULT_TIMEOUT} seconds reached while fetching data from {endpoint}."
-            )
-        except httpx.ConnectError as e:
-            raise SapClientException(f"Cannot fetch data from {endpoint}, exception: {e}")
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            raise SapClientException(f"Failed to fetch data from endpoint {endpoint}: {str(e)}")
+        except httpx.ReadTimeout as e:
+            raise SapClientException(f"Request timed out after all retry attempts for endpoint {endpoint}: {str(e)}")
+        except Exception as e:
+            raise SapClientException(f"Failed to fetch data from {endpoint}: {str(e)}")
 
     @staticmethod
     def _join_url_parts(*parts) -> str:

@@ -7,6 +7,9 @@ import dataconf
 
 
 class ConfigurationBase:
+    DEFAULT_LIMIT = 10_000
+    DEFAULT_BATCH_SIZE = 2
+
     @staticmethod
     def _convert_private_value(value: str):
         return value.replace('"#', '"pswd_')
@@ -39,10 +42,11 @@ class ConfigurationBase:
         Returns: List[str]
 
         """
-        return [cls._convert_private_value_inv(f.name)
-                for f in dataclasses.fields(cls)
-                if f.default == dataclasses.MISSING
-                and f.default_factory == dataclasses.MISSING]
+        return [
+            cls._convert_private_value_inv(f.name)
+            for f in dataclasses.fields(cls)
+            if f.default == dataclasses.MISSING and f.default_factory == dataclasses.MISSING
+        ]
 
 
 @dataclass
@@ -51,6 +55,8 @@ class Authentication(ConfigurationBase):
     username: str
     pswd_password: str
     verify: bool = False
+    timeout: int = 1800
+    retries: int = 3
 
 
 @dataclass
@@ -58,8 +64,8 @@ class Source(ConfigurationBase):
     resource_alias: str
     sync_type: str
     paging_method: str
-    limit: int = 10_000
-    batch_size: int = 2
+    limit: int = ConfigurationBase.DEFAULT_LIMIT
+    batch_size: int = ConfigurationBase.DEFAULT_BATCH_SIZE
 
 
 @dataclass
