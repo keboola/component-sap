@@ -136,7 +136,6 @@ class SAPClient(AsyncHttpClient):
                     f"The component will try to fetch the data in one request."
                 )
         except SapClientException as e:
-            logging.error(f"Failed to load metadata for table {resource_alias}: {str(e)}")
             raise SapClientException(f"Failed to load metadata for table {resource_alias}: {str(e)}")
 
     async def check_delta_support(self, resource_alias: str, data_source: DataSource):
