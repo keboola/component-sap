@@ -191,15 +191,15 @@ class Component(ComponentBase):
         retries = self._configuration.authentication.retries
 
         client = SAPClient(
-            server_url,
-            username,
-            password,
-            "",
-            timeout,
-            retries,
-            verify,
-            ConfigurationBase.DEFAULT_LIMIT,
-            ConfigurationBase.DEFAULT_BATCH_SIZE,
+            server_url=server_url,
+            username=username,
+            password=password,
+            client_id="",
+            timeout=timeout,
+            retries=retries,
+            verify=verify,
+            default_limit=ConfigurationBase.DEFAULT_LIMIT,
+            default_batch_size=ConfigurationBase.DEFAULT_BATCH_SIZE,
         )
 
         try:
