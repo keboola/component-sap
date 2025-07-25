@@ -189,13 +189,12 @@ class Component(ComponentBase):
         verify = self._configuration.authentication.verify
         timeout = self._configuration.authentication.timeout
         retries = self._configuration.authentication.retries
-        destination = self._configuration.destination
 
         client = SAPClient(
             server_url=server_url,
             username=username,
             password=password,
-            destination=destination,
+            destination=None,
             timeout=timeout,
             retries=retries,
             verify=verify,
