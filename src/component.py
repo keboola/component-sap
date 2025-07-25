@@ -194,12 +194,12 @@ class Component(ComponentBase):
             server_url=server_url,
             username=username,
             password=password,
-            client_id="",
+            destination="",
             timeout=timeout,
             retries=retries,
             verify=verify,
-            default_limit=ConfigurationBase.DEFAULT_LIMIT,
-            default_batch_size=ConfigurationBase.DEFAULT_BATCH_SIZE,
+            limit=ConfigurationBase.DEFAULT_LIMIT,
+            batch_size=ConfigurationBase.DEFAULT_BATCH_SIZE,
         )
 
         try:
