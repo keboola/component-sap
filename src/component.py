@@ -189,16 +189,18 @@ class Component(ComponentBase):
         verify = self._configuration.authentication.verify
         timeout = self._configuration.authentication.timeout
         retries = self._configuration.authentication.retries
+        destination = self._configuration.destination
 
         client = SAPClient(
             server_url=server_url,
             username=username,
             password=password,
+            destination=destination,
             timeout=timeout,
             retries=retries,
             verify=verify,
-            default_limit=ConfigurationBase.DEFAULT_LIMIT,
-            default_batch_size=ConfigurationBase.DEFAULT_BATCH_SIZE,
+            limit=ConfigurationBase.DEFAULT_LIMIT,
+            batch_size=ConfigurationBase.DEFAULT_BATCH_SIZE,
         )
 
         try:
