@@ -194,7 +194,7 @@ class Component(ComponentBase):
             server_url=server_url,
             username=username,
             password=password,
-            destination=Destination(),
+            destination="",
             timeout=timeout,
             retries=retries,
             verify=verify,
