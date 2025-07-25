@@ -11,7 +11,7 @@ from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
 from keboola.csvwriter import ElasticDictWriter
 
-from configuration import Configuration, ConfigurationBase, SyncActionConfiguration
+from configuration import Configuration, ConfigurationBase, Destination, SyncActionConfiguration
 from sap_client.client import SAPClient, SapClientException
 from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
 
@@ -194,7 +194,7 @@ class Component(ComponentBase):
             server_url=server_url,
             username=username,
             password=password,
-            destination=None,
+            destination=Destination(),
             timeout=timeout,
             retries=retries,
             verify=verify,
