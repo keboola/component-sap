@@ -65,12 +65,14 @@
           "default": "offset",
           "enum": [
             "offset",
-            "key"
+            "key",
+            "none"
           ],
           "options": {
             "enum_titles": [
               "Offset",
-              "Key"
+              "Key",
+              "No Paging (fetch all data at once)"
             ]
           },
           "uniqueItems": true,
