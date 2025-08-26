@@ -128,7 +128,7 @@ class SAPClient(AsyncHttpClient):
             if self.delta:
                 await self.fetch_and_store_full(resource_alias)
             elif data_source.PAGING:
-                if paging_method == "none":
+                if paging_method == "without":
                     await self.fetch_and_store_full(resource_alias)
                 else:
                     await self.fetch_with_paging(resource_alias, paging_method)

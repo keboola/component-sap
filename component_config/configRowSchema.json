@@ -61,18 +61,18 @@
         "paging_method": {
           "type": "string",
           "required": true,
-          "title": "Paging method",
+          "title": "Pagination method",
           "default": "offset",
           "enum": [
             "offset",
             "key",
-            "none"
+            "without"
           ],
           "options": {
             "enum_titles": [
               "Offset",
               "Key",
-              "No Paging (fetch all data at once)"
+              "No pagination (fetch all data at once)"
             ]
           },
           "uniqueItems": true,
