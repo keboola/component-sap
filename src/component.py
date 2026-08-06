@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+from datetime import datetime, timedelta
 from typing import Union
 
 from keboola.component.base import ComponentBase, sync_action
@@ -41,6 +42,7 @@ class Component(ComponentBase):
         batch_size = self._configuration.source.batch_size
         paging_method = self._configuration.source.paging_method
         sync_type = self._configuration.source.sync_type
+        delta_lookback_days = self._configuration.source.delta_lookback_days
 
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
@@ -51,7 +53,7 @@ class Component(ComponentBase):
 
         statefile_columns = self.state.get(resource_alias, {}).get("columns", [])
 
-        previous_delta_max = self._init_delta(sync_type, resource_alias)
+        previous_delta_max = self._init_delta(sync_type, resource_alias, delta_lookback_days)
 
         client = SAPClient(
             server_url=server_url,
@@ -113,7 +115,7 @@ class Component(ComponentBase):
 
         self.write_state_file(self.state)
 
-    def _init_delta(self, sync_mode: str, resource_alias: str) -> Union[bool, int, str]:
+    def _init_delta(self, sync_mode: str, resource_alias: str, lookback_days: int = 0) -> Union[bool, int, str]:
         """This method initializes delta sync by setting delta pointer to the last value from state file."""
         previous_delta_max = None
         if sync_mode == "incremental_sync":
@@ -124,8 +126,42 @@ class Component(ComponentBase):
                     "Delta sync is enabled, but no previous delta pointer was found in state file. "
                     "Full sync will be performed."
                 )
+            elif lookback_days:
+                previous_delta_max = self._shift_delta_pointer(previous_delta_max, lookback_days)
 
         return previous_delta_max
+
+    @staticmethod
+    def _shift_delta_pointer(delta_pointer: Union[int, str], lookback_days: int) -> Union[int, str]:
+        """Shifts a timestamp based delta pointer back by the given number of days.
+
+        Supported pointer formats are YYYYMMDD and YYYYMMDDHHMMSS. Pointers in any other format
+        (e.g. sequential ids) cannot be shifted and are returned unchanged.
+        """
+        if lookback_days < 0:
+            raise UserException("Delta lookback (days) must not be negative.")
+
+        pointer = str(delta_pointer)
+        date_format = {8: "%Y%m%d", 14: "%Y%m%d%H%M%S"}.get(len(pointer))
+
+        if date_format:
+            try:
+                shifted = datetime.strptime(pointer, date_format) - timedelta(days=lookback_days)
+            except ValueError:
+                shifted = None
+
+            if shifted:
+                new_pointer = shifted.strftime(date_format)
+                logging.info(
+                    f"Delta pointer {delta_pointer} was shifted back by {lookback_days} day(s) to {new_pointer}."
+                )
+                return int(new_pointer) if isinstance(delta_pointer, int) else new_pointer
+
+        logging.warning(
+            f"Delta lookback is set to {lookback_days} day(s), but the delta pointer {delta_pointer} is not "
+            f"a supported timestamp (YYYYMMDD or YYYYMMDDHHMMSS). The pointer will be used as is."
+        )
+        return delta_pointer
 
     @staticmethod
     def add_column_metadata(client: SAPClient, out_table: TableDefinition):
