@@ -42,6 +42,17 @@ Param 1
 Param 2
 -------
 
+Delta lookback (days)
+---------------------
+
+`source.delta_lookback_days` (integer, default `0`) applies only to `incremental_sync`. Before a run,
+the delta pointer stored in the state file is shifted back by the given number of days, so each run
+re-fetches an overlapping window of data. This is useful for tables where changes cannot be tracked
+reliably and a longer overlap (e.g. 10 days) is needed.
+
+The pointer must be a timestamp in `YYYYMMDD` or `YYYYMMDDHHMMSS` format; other pointer formats
+(e.g. sequential ids) cannot be shifted and are used as is (a warning is logged).
+
 Output
 ======
 

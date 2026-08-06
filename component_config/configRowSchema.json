@@ -78,6 +78,19 @@
           "uniqueItems": true,
           "description": "DataSource pagination method",
           "propertyOrder": 5
+        },
+        "delta_lookback_days": {
+          "type": "integer",
+          "title": "Delta lookback (days)",
+          "default": 0,
+          "minimum": 0,
+          "description": "Only for incremental sync. Shifts the stored delta pointer back by the given number of days, so each run re-fetches an overlapping window (e.g. 10 = fetch everything changed since 10 days before the last pointer). Works only for timestamp based delta pointers (YYYYMMDD or YYYYMMDDHHMMSS).",
+          "propertyOrder": 6,
+          "options": {
+            "dependencies": {
+              "sync_type": "incremental_sync"
+            }
+          }
         }
       }
     },
