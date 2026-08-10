@@ -69,6 +69,14 @@ Two requirements, both enforced with a clear error rather than silently ignored:
 - With `incremental_load`, SAP must report key columns for the table, so re-fetched
   rows are updated rather than appended as duplicates.
 
+Keep the window narrow. A delta fetch is a single un-paginated request, so the whole
+window has to come back in one response inside the configured `timeout`. The maximum
+accepted is 365 days, and anything above 31 logs a warning.
+
+The option only applies to `incremental_sync`. On a `full_sync` row, or on the first
+run of an incremental row where no pointer has been stored yet, it is inert - the run
+behaves exactly as it would with the option unset.
+
 Combining it with `full_load` only logs a warning - every run still overwrites the
 destination table with just the fetched window.
 

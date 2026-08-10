@@ -3,6 +3,9 @@ Created on 12. 11. 2018
 
 @author: esner
 '''
+import json
+import shutil
+import tempfile
 import unittest
 import mock
 import os
@@ -12,6 +15,7 @@ from freezegun import freeze_time
 from keboola.component.exceptions import UserException
 
 from component import Component
+from sap_client.client import SAPClient
 
 
 class TestComponent(unittest.TestCase):
@@ -90,25 +94,24 @@ class TestDeltaLookback(unittest.TestCase):
     # --- validation --------------------------------------------------------------
 
     def test_invalid_lookback_values_raise(self):
-        for value in (-1, 3651, True, "10"):
+        for value in (-1, 366, 3650, True, "10"):
             with self.subTest(value=value):
                 with self.assertRaises(UserException):
                     Component._validate_delta_lookback_days(value)
 
     def test_valid_lookback_values_accepted(self):
-        for value in (0, 10, 3650):
+        for value in (0, 10, 365):
             with self.subTest(value=value):
                 self.assertEqual(value, Component._validate_delta_lookback_days(value))
 
     # --- what gets written back to state -----------------------------------------
 
     def test_state_does_not_regress_when_sap_returns_no_pointer(self):
-        """Reproduces the original failure: the lookback window walking backwards every run.
+        """On a quiet run SAP returns no delta pointer, and the stored one must survive intact.
 
-        On a run where nothing changed, SAP returns no delta pointer of its own, so the client's
-        maximum is just the (shifted) pointer it was handed. Persisting that would make the next
-        run shift an already-shifted pointer, and the window would creep back a further N days
-        every run, without limit and without any error.
+        The client seeds its own maximum with the pointer it was handed, so without the floor the
+        shifted pointer is what gets persisted: state drops back to the start of the lookback
+        window and stays there, and the window then widens by a day for every day that passes.
         """
         stored = self.STORED
         now = self.NOW
@@ -120,6 +123,9 @@ class TestDeltaLookback(unittest.TestCase):
 
             self.assertEqual(stored, persisted, f"pointer regressed on run {run + 1}")
             stored = persisted
+
+    def test_persisted_pointer_holds_when_sap_returns_an_older_pointer(self):
+        self.assertEqual(self.STORED, Component._persisted_delta_pointer(20260101000000, self.STORED))
 
     def test_state_advances_when_sap_returns_a_newer_pointer(self):
         persisted = Component._persisted_delta_pointer(20260806021626, self.STORED)
@@ -148,6 +154,142 @@ class TestDeltaLookback(unittest.TestCase):
         component.state = {"ACC_DOC_HEADER": {"delta_max": self.STORED}}
 
         self.assertIsNone(component._init_delta("full_sync", "ACC_DOC_HEADER"))
+
+
+class FakeSapClient(SAPClient):
+    """A SAPClient that talks to nothing.
+
+    Subclasses the real client so that the delta pointer bookkeeping under test - seeding
+    `delta_values` with the inbound pointer, and reducing it with `max_timestamp_or_id` - is the
+    real implementation rather than a restatement of it.
+    """
+
+    sent_pointers = []
+    returned_pointer = None
+    metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10, "KEY": True}}
+
+    def __init__(self, **kwargs):
+        # Deliberately not calling super().__init__: it would build a real HTTP client.
+        self.delta = kwargs.get("delta")
+        self.delta_values = []
+        if self.delta:
+            self.delta_values.append(self.delta)
+        FakeSapClient.sent_pointers.append(self.delta)
+
+    async def fetch(self, resource_alias, paging_method):
+        if FakeSapClient.returned_pointer:
+            self.delta_values.append(FakeSapClient.returned_pointer)
+
+
+class TestDeltaLookbackRun(unittest.TestCase):
+    """Drives the real `Component.run()` so the lookback wiring itself is covered, not just the helpers."""
+
+    ALIAS = "ACC_DOC_HEADER"
+    STORED = 20260805021626
+
+    def setUp(self):
+        self.data_dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.data_dir, "in"))
+        os.makedirs(os.path.join(self.data_dir, "out", "tables"))
+        FakeSapClient.sent_pointers = []
+        FakeSapClient.returned_pointer = None
+        FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10, "KEY": True}}
+
+    def tearDown(self):
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+
+    def _write_config(self, delta_lookback_days=0, sync_type="incremental_sync", load_type="incremental_load"):
+        config = {
+            "parameters": {
+                "authentication": {"server_url": "https://sap.example", "username": "u", "#password": "p"},
+                "source": {
+                    "resource_alias": self.ALIAS,
+                    "sync_type": sync_type,
+                    "paging_method": "key",
+                    "delta_lookback_days": delta_lookback_days,
+                },
+                "destination": {"output_table_name": "", "load_type": load_type},
+            }
+        }
+        with open(os.path.join(self.data_dir, "config.json"), "w") as f:
+            json.dump(config, f)
+
+    def _write_state(self, delta_max):
+        with open(os.path.join(self.data_dir, "in", "state.json"), "w") as f:
+            json.dump({self.ALIAS: {"delta_max": delta_max}}, f)
+
+    def _read_state(self):
+        with open(os.path.join(self.data_dir, "out", "state.json")) as f:
+            return json.load(f)
+
+    def _run(self):
+        with mock.patch.dict(os.environ, {"KBC_DATADIR": self.data_dir}):
+            with mock.patch("component.SAPClient", FakeSapClient):
+                Component().run()
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_run_sends_lookback_pointer_but_persists_the_stored_one(self):
+        """The failure this guards against: a quiet run persisting the shifted pointer.
+
+        Without the floor at the state write, `delta_max` drops to the start of the lookback
+        window and the window silently widens from then on.
+        """
+        self._write_config(delta_lookback_days=10)
+        self._write_state(self.STORED)
+
+        self._run()
+
+        self.assertEqual([20260727021626], FakeSapClient.sent_pointers)
+        self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_run_without_lookback_is_unchanged(self):
+        self._write_config(delta_lookback_days=0)
+        self._write_state(self.STORED)
+
+        self._run()
+
+        self.assertEqual([self.STORED], FakeSapClient.sent_pointers)
+        self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_run_persists_a_newer_pointer_returned_by_sap(self):
+        self._write_config(delta_lookback_days=10)
+        self._write_state(self.STORED)
+        FakeSapClient.returned_pointer = 20260806021626
+
+        self._run()
+
+        self.assertEqual(20260806021626, self._read_state()[self.ALIAS]["delta_max"])
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_run_fails_when_lookback_source_has_no_primary_key(self):
+        self._write_config(delta_lookback_days=10)
+        self._write_state(self.STORED)
+        FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
+
+        with self.assertRaises(UserException):
+            self._run()
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_full_sync_row_with_a_leftover_lookback_value_is_unaffected(self):
+        """The field is hidden outside incremental sync, so a stale value must not fail the run."""
+        self._write_config(delta_lookback_days=10, sync_type="full_sync")
+        self._write_state(self.STORED)
+        FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
+
+        self._run()
+
+        self.assertEqual([None], FakeSapClient.sent_pointers)
+        self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_first_run_without_a_stored_pointer_full_syncs(self):
+        self._write_config(delta_lookback_days=10)
+
+        self._run()
+
+        self.assertEqual([False], FakeSapClient.sent_pointers)
 
 
 if __name__ == "__main__":

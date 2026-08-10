@@ -21,7 +21,11 @@ from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
 DELTA_POINTER_FORMATS = {8: "%Y%m%d", 14: "%Y%m%d%H%M%S"}
 # Guards against sequential id pointers that happen to parse as a date (e.g. 10000101 -> year 1000).
 MIN_DELTA_POINTER_YEAR = 1990
-MAX_DELTA_LOOKBACK_DAYS = 3650
+# A delta fetch is a single un-paginated request, so the whole window has to come back in one
+# response within the configured timeout. The cap keeps a typo from turning into a de-facto
+# full sync; the warning threshold flags windows wide enough to be worth thinking about.
+MAX_DELTA_LOOKBACK_DAYS = 365
+WIDE_DELTA_LOOKBACK_DAYS = 31
 
 
 class Component(ComponentBase):
@@ -62,10 +66,14 @@ class Component(ComponentBase):
 
         stored_delta_max = self._init_delta(sync_type, resource_alias)
 
+        # The field is hidden in the UI outside incremental sync, so a leftover value on a full sync
+        # row must stay inert - it cannot be cleared by someone who cannot see it.
+        lookback_enabled = bool(delta_lookback_days) and sync_type == "incremental_sync"
+
         # The lookback only moves the pointer *sent* to SAP; stored_delta_max stays the floor for
         # what is written back to state at the end of the run.
         previous_delta_max = stored_delta_max
-        if stored_delta_max and delta_lookback_days:
+        if lookback_enabled and stored_delta_max:
             previous_delta_max = self._apply_delta_lookback(stored_delta_max, delta_lookback_days)
 
         client = SAPClient(
@@ -85,7 +93,15 @@ class Component(ComponentBase):
         output_table_name = output_table_name or resource_alias
         incremental = load_type != "full_load"
 
-        if delta_lookback_days and not incremental:
+        if lookback_enabled and delta_lookback_days > WIDE_DELTA_LOOKBACK_DAYS:
+            logging.warning(
+                f"Delta lookback (days) is set to {delta_lookback_days}. A delta fetch is a single "
+                f"un-paginated request, so the whole window must be returned in one response within "
+                f"the configured timeout of {timeout}s. Use the narrowest window that covers the "
+                f"changes this source reports late."
+            )
+
+        if lookback_enabled and not incremental:
             logging.warning(
                 f"Delta lookback (days) is set to {delta_lookback_days}, but the load type is Full Load, "
                 f"so every run overwrites the destination table with just the fetched window. "
@@ -106,6 +122,9 @@ class Component(ComponentBase):
             else:
                 raise UserException(f"An error occurred while fetching resource: {e}")
 
+        if lookback_enabled and incremental:
+            self._check_lookback_has_primary_key(client, resource_alias, delta_lookback_days)
+
         files = os.listdir(temp_dir)
 
         if files:
@@ -119,15 +138,6 @@ class Component(ComponentBase):
                             wr.writerow(self._ensure_proper_column_names(row))
 
             out_table = self.add_column_metadata(client, out_table)
-
-            if delta_lookback_days and incremental and not out_table.primary_key:
-                raise UserException(
-                    f"Delta lookback (days) is set to {delta_lookback_days}, but SAP reports no key columns "
-                    f"for resource {resource_alias}. Without a primary key the re-fetched rows would be "
-                    f"appended to the destination table instead of updated, creating duplicates. "
-                    f"Set Delta lookback (days) to 0 for this source."
-                )
-
             self.write_manifest(out_table)
 
             self.state.setdefault(resource_alias, {})["columns"] = wr.fieldnames
@@ -232,6 +242,24 @@ class Component(ComponentBase):
             )
 
         return int(new_pointer) if isinstance(delta_pointer, int) else new_pointer
+
+    @staticmethod
+    def _check_lookback_has_primary_key(client: SAPClient, resource_alias: str, lookback_days: int) -> None:
+        """Refuses a lookback window that would append the re-fetched rows as duplicates.
+
+        Checked against the column metadata rather than the written table so that the outcome
+        depends only on the configuration and the source, not on whether this particular run
+        happened to return any rows.
+        """
+        if any(column.get("KEY") for column in client.metadata.values()):
+            return
+
+        raise UserException(
+            f"Delta lookback (days) is set to {lookback_days}, but SAP reports no key columns for "
+            f"resource {resource_alias}. Without a primary key the re-fetched rows would be appended "
+            f"to the destination table instead of updated, creating duplicates on every run. "
+            f"Set Delta lookback (days) to 0 for this source."
+        )
 
     @staticmethod
     def _persisted_delta_pointer(
