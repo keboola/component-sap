@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Union
+from typing import Union
 
 from keboola.component.base import ComponentBase, sync_action
 from keboola.component.dao import TableDefinition
@@ -182,7 +182,7 @@ class Component(ComponentBase):
         return lookback_days
 
     @staticmethod
-    def _parse_delta_pointer(delta_pointer: Union[int, str], now: datetime) -> Optional[Tuple[datetime, str]]:
+    def _parse_delta_pointer(delta_pointer: Union[int, str], now: datetime) -> tuple[datetime, str] | None:
         """Parses a delta pointer as a timestamp.
 
         Returns a (datetime, format) tuple, or None when the pointer is not a timestamp a lookback
@@ -208,7 +208,7 @@ class Component(ComponentBase):
 
     @classmethod
     def _apply_delta_lookback(
-        cls, delta_pointer: Union[int, str], lookback_days: int, now: datetime = None
+        cls, delta_pointer: Union[int, str], lookback_days: int, now: datetime | None = None
     ) -> Union[int, str]:
         """Moves the delta pointer sent to SAP back to `now - lookback_days`.
 
@@ -232,8 +232,8 @@ class Component(ComponentBase):
 
         if shifted == stored_datetime:
             logging.info(
-                f"Delta lookback of {lookback_days} day(s) reaches further back than the stored delta "
-                f"pointer {delta_pointer}, which is used unchanged so that no data is skipped."
+                f"The stored delta pointer {delta_pointer} is already older than the {lookback_days} "
+                f"day(s) lookback window, so it is used unchanged and no data is skipped."
             )
         else:
             logging.info(
@@ -254,10 +254,16 @@ class Component(ComponentBase):
         if any(column.get("KEY") for column in client.metadata.values()):
             return
 
+        reason = (
+            "SAP returned no column metadata at all"
+            if not client.metadata
+            else "SAP reports no key columns"
+        )
+
         raise UserException(
-            f"Delta lookback (days) is set to {lookback_days}, but SAP reports no key columns for "
-            f"resource {resource_alias}. Without a primary key the re-fetched rows would be appended "
-            f"to the destination table instead of updated, creating duplicates on every run. "
+            f"Delta lookback (days) is set to {lookback_days}, but {reason} for resource "
+            f"{resource_alias}. Without a primary key the re-fetched rows would be appended to the "
+            f"destination table instead of updated, creating duplicates on every run. "
             f"Set Delta lookback (days) to 0 for this source."
         )
 

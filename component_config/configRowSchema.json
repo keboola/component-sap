@@ -82,11 +82,11 @@
         "delta_lookback_days": {
           "type": "integer",
           "title": "Delta lookback (days)",
-          "default": 0,
           "minimum": 0,
           "maximum": 365,
-          "description": "Re-fetch an overlapping window on every incremental run instead of resuming exactly where the last run stopped. With 10, each run asks SAP for everything changed since today minus 10 days. Use it for tables whose changes cannot be tracked reliably. Leave at 0 to resume from the last delta pointer. A delta fetch is a single un-paginated request, so keep the window as narrow as the source needs. Requires a source with a timestamp delta pointer (YYYYMMDD or YYYYMMDDHHMMSS) and, with Incremental Load, a primary key - the run fails with an explanation if either is missing.",
+          "description": "Re-fetch changes from this many days back on every run, instead of resuming from the last delta pointer.",
           "options": {
+            "tooltip": "Use this for source tables whose changes cannot be tracked reliably. With `10`, each run asks SAP for everything changed since today minus 10 days. Leave empty (or `0`) to resume from the last delta pointer.\n\nThe pointer stored between runs is unaffected, so the window stays anchored to the current date rather than creeping further back. A run that is behind schedule still resumes from where it left off, so no data is skipped.\n\nRequirements, both reported as a clear error if unmet:\n\n- The source's delta pointer must be a `YYYYMMDD` or `YYYYMMDDHHMMSS` timestamp. Sequential ids cannot express a date window.\n- With Incremental Load, SAP must report key columns for the table, so re-fetched rows are updated rather than appended as duplicates.\n\nKeep the window narrow: a delta fetch is a single un-paginated request, so the whole window must return in one response within the configured timeout.",
             "dependencies": {
               "sync_type": "incremental_sync"
             }

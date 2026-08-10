@@ -289,6 +289,7 @@ class TestDeltaLookbackRun(unittest.TestCase):
 
         for rows in ([], [{"ACC_NUMBER": "1"}]):
             with self.subTest(rows=len(rows)):
+                self.tearDown()
                 self.setUp()
                 FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
                 FakeSapClient.rows = rows
