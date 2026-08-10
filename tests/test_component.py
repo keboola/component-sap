@@ -167,16 +167,22 @@ class FakeSapClient(SAPClient):
     sent_pointers = []
     returned_pointer = None
     metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10, "KEY": True}}
+    rows = []
 
     def __init__(self, **kwargs):
         # Deliberately not calling super().__init__: it would build a real HTTP client.
         self.delta = kwargs.get("delta")
+        self.destination = kwargs.get("destination")
+        self.metadata = FakeSapClient.metadata
         self.delta_values = []
         if self.delta:
             self.delta_values.append(self.delta)
         FakeSapClient.sent_pointers.append(self.delta)
 
     async def fetch(self, resource_alias, paging_method):
+        if FakeSapClient.rows:
+            with open(os.path.join(self.destination, f"{resource_alias}_0.json"), "w") as f:
+                json.dump(FakeSapClient.rows, f)
         if FakeSapClient.returned_pointer:
             self.delta_values.append(FakeSapClient.returned_pointer)
 
@@ -194,6 +200,7 @@ class TestDeltaLookbackRun(unittest.TestCase):
         FakeSapClient.sent_pointers = []
         FakeSapClient.returned_pointer = None
         FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10, "KEY": True}}
+        FakeSapClient.rows = []
 
     def tearDown(self):
         shutil.rmtree(self.data_dir, ignore_errors=True)
@@ -263,13 +270,38 @@ class TestDeltaLookbackRun(unittest.TestCase):
         self.assertEqual(20260806021626, self._read_state()[self.ALIAS]["delta_max"])
 
     @freeze_time("2026-08-06 02:16:26")
-    def test_run_fails_when_lookback_source_has_no_primary_key(self):
+    def test_run_writes_the_table_with_lookback_enabled(self):
         self._write_config(delta_lookback_days=10)
         self._write_state(self.STORED)
+        FakeSapClient.rows = [{"ACC_NUMBER": "1"}, {"ACC_NUMBER": "2"}]
+
+        self._run()
+
+        table_path = os.path.join(self.data_dir, "out", "tables", self.ALIAS)
+        self.assertTrue(os.path.exists(table_path))
+        self.assertTrue(os.path.exists(table_path + ".manifest"))
+        self.assertEqual(["ACC_NUMBER"], self._read_state()[self.ALIAS]["columns"])
+
+    @freeze_time("2026-08-06 02:16:26")
+    def test_run_fails_when_lookback_source_has_no_primary_key(self):
+        """The guard must run before anything is written, and regardless of how many rows came back."""
         FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
 
-        with self.assertRaises(UserException):
-            self._run()
+        for rows in ([], [{"ACC_NUMBER": "1"}]):
+            with self.subTest(rows=len(rows)):
+                self.setUp()
+                FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
+                FakeSapClient.rows = rows
+                self._write_config(delta_lookback_days=10)
+                self._write_state(self.STORED)
+
+                with self.assertRaises(UserException):
+                    self._run()
+
+                # Nothing written: no manifest, and the stored pointer is left alone.
+                table_path = os.path.join(self.data_dir, "out", "tables", self.ALIAS)
+                self.assertFalse(os.path.exists(table_path + ".manifest"))
+                self.assertFalse(os.path.exists(os.path.join(self.data_dir, "out", "state.json")))
 
     @freeze_time("2026-08-06 02:16:26")
     def test_full_sync_row_with_a_leftover_lookback_value_is_unaffected(self):
