@@ -333,10 +333,10 @@ class SAPClient(AsyncHttpClient):
     @property
     def max_delta_pointer(self) -> Union[int, str, None]:
         logging.debug(f"Client Delta values: {self.delta_values}")
-        return self._max_timestamp_or_id(self.delta_values)
+        return self.max_timestamp_or_id(self.delta_values)
 
     @staticmethod
-    def _max_timestamp_or_id(values: list):
+    def max_timestamp_or_id(values: list):
         if not values:
             return None
         # sometimes can come different length of values, so we need to normalize them

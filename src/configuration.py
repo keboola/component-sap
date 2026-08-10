@@ -66,6 +66,7 @@ class Source(ConfigurationBase):
     paging_method: str
     limit: int = ConfigurationBase.DEFAULT_LIMIT
     batch_size: int = ConfigurationBase.DEFAULT_BATCH_SIZE
+    delta_lookback_days: int = 0
 
 
 @dataclass

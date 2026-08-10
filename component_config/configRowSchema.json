@@ -78,6 +78,20 @@
           "uniqueItems": true,
           "description": "DataSource pagination method",
           "propertyOrder": 5
+        },
+        "delta_lookback_days": {
+          "type": "integer",
+          "title": "Delta lookback (days)",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 3650,
+          "description": "Re-fetch an overlapping window on every incremental run instead of resuming exactly where the last run stopped. With 10, each run asks SAP for everything changed since today minus 10 days. Use it for tables whose changes cannot be tracked reliably. Leave at 0 to resume from the last delta pointer. Requires a source with a timestamp delta pointer (YYYYMMDD or YYYYMMDDHHMMSS) and, with Incremental Load, a primary key - the run fails with an explanation if either is missing.",
+          "options": {
+            "dependencies": {
+              "sync_type": "incremental_sync"
+            }
+          },
+          "propertyOrder": 6
         }
       }
     },
