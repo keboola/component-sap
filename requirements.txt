@@ -1,6 +1,6 @@
 keboola.component==1.4.3
 keboola.utils
-keboola.http-client==1.2.0
+keboola.http-client>=1.2.0
 keboola.csvwriter
 mock
 freezegun
