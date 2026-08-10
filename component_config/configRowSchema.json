@@ -79,14 +79,12 @@
           "description": "DataSource pagination method",
           "propertyOrder": 5
         },
-        "delta_lookback_days": {
-          "type": "integer",
-          "title": "Delta lookback (days)",
-          "minimum": 0,
-          "maximum": 365,
-          "description": "Re-fetch changes from this many days back on every run, instead of resuming from the last delta pointer.",
+        "date_from": {
+          "type": "string",
+          "title": "Date Start",
+          "description": "Re-fetch changes since this date on every run, instead of resuming from the last delta pointer. Leave empty to resume from the last delta pointer.",
           "options": {
-            "tooltip": "Use this for source tables whose changes cannot be tracked reliably. With `10`, each run asks SAP for everything changed since today minus 10 days. Leave empty (or `0`) to resume from the last delta pointer.\n\nThe pointer stored between runs is unaffected, so the window stays anchored to the current date rather than creeping further back. A run that is behind schedule still resumes from where it left off, so no data is skipped.\n\nRequirements, both reported as a clear error if unmet:\n\n- The source's delta pointer must be a `YYYYMMDD` or `YYYYMMDDHHMMSS` timestamp. Sequential ids cannot express a date window.\n- With Incremental Load, SAP must report key columns for the table, so re-fetched rows are updated rather than appended as duplicates.\n\nKeep the window narrow: a delta fetch is a single un-paginated request, so the whole window must return in one response within the configured timeout.",
+            "tooltip": "Use this for source tables whose changes cannot be tracked reliably. Accepts an absolute date (`2026-01-01`) or a relative one (`10 days ago`, `2 weeks ago`). With `10 days ago`, each run asks SAP for everything changed since today minus 10 days.\n\n**The window always runs from this date up to now** - there is currently no end date, so every run fetches through to the present moment. Leave empty to simply resume from the last delta pointer.\n\nThe pointer stored between runs is never moved backwards, so the window stays anchored to the current date rather than creeping wider. A run that is behind schedule still resumes from where it left off, so no data is skipped. Date Start applies once the source has been synced at least once; the very first run (with no stored data yet) performs a full sync.\n\nRequirements, both reported as a clear error if unmet:\n\n- The source's delta pointer must be a `YYYYMMDD` or `YYYYMMDDHHMMSS` timestamp. Sequential ids cannot express a date window.\n- With Incremental Load, SAP must report key columns for the table, so re-fetched rows are updated rather than appended as duplicates.\n\nKeep the window narrow: a delta fetch is a single un-paginated request, so the whole window must return in one response within the configured timeout.",
             "dependencies": {
               "sync_type": "incremental_sync"
             }

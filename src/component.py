@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Union
 
 from keboola.component.base import ComponentBase, sync_action
@@ -11,21 +11,21 @@ from keboola.component.dao import TableDefinition
 from keboola.component.exceptions import UserException
 from keboola.component.sync_actions import SelectElement
 from keboola.csvwriter import ElasticDictWriter
+from keboola.utils import parse_datetime_interval
 
 from configuration import Configuration, ConfigurationBase, SyncActionConfiguration
 from sap_client.client import SAPClient, SapClientException
 from sap_client.sap_snowflake_mapping import SAP_TO_SNOWFLAKE_MAP
 
-# Delta pointer formats that a lookback window can be expressed in. The format is dictated by the
+# Delta pointer formats that a Date Start window can be expressed in. The format is dictated by the
 # SAP source, so it is inferred from the pointer already stored in state.
 DELTA_POINTER_FORMATS = {8: "%Y%m%d", 14: "%Y%m%d%H%M%S"}
 # Guards against sequential id pointers that happen to parse as a date (e.g. 10000101 -> year 1000).
 MIN_DELTA_POINTER_YEAR = 1990
 # A delta fetch is a single un-paginated request, so the whole window has to come back in one
-# response within the configured timeout. The cap keeps a typo from turning into a de-facto
-# full sync; the warning threshold flags windows wide enough to be worth thinking about.
-MAX_DELTA_LOOKBACK_DAYS = 365
-WIDE_DELTA_LOOKBACK_DAYS = 31
+# response within the configured timeout. A window wider than this is flagged, not blocked - a
+# one-off backfill from an absolute date is a legitimate (if heavy) use.
+WIDE_WINDOW_DAYS = 31
 
 
 class Component(ComponentBase):
@@ -53,7 +53,7 @@ class Component(ComponentBase):
         batch_size = self._configuration.source.batch_size
         paging_method = self._configuration.source.paging_method
         sync_type = self._configuration.source.sync_type
-        delta_lookback_days = self._validate_delta_lookback_days(self._configuration.source.delta_lookback_days)
+        date_from = self._configuration.source.date_from
 
         output_table_name = self._configuration.destination.output_table_name
         load_type = self._configuration.destination.load_type
@@ -68,13 +68,19 @@ class Component(ComponentBase):
 
         # The field is hidden in the UI outside incremental sync, so a leftover value on a full sync
         # row must stay inert - it cannot be cleared by someone who cannot see it.
-        lookback_enabled = bool(delta_lookback_days) and sync_type == "incremental_sync"
+        date_from_enabled = bool(date_from) and sync_type == "incremental_sync"
 
-        # The lookback only moves the pointer *sent* to SAP; stored_delta_max stays the floor for
-        # what is written back to state at the end of the run.
+        if date_from_enabled:
+            # Fail before any fetch on a Date Start that cannot be understood, even on a first run
+            # where it is not applied yet.
+            self._validate_date_from(date_from)
+
+        # Date Start only moves the pointer *sent* to SAP; stored_delta_max stays the floor for what
+        # is written back to state at the end of the run. It needs a stored pointer to learn the
+        # source's pointer format, so the very first run (no stored pointer) still does a full sync.
         previous_delta_max = stored_delta_max
-        if lookback_enabled and stored_delta_max:
-            previous_delta_max = self._apply_delta_lookback(stored_delta_max, delta_lookback_days)
+        if date_from_enabled and stored_delta_max:
+            previous_delta_max = self._apply_date_from(stored_delta_max, date_from)
 
         client = SAPClient(
             server_url=server_url,
@@ -93,18 +99,10 @@ class Component(ComponentBase):
         output_table_name = output_table_name or resource_alias
         incremental = load_type != "full_load"
 
-        if lookback_enabled and delta_lookback_days > WIDE_DELTA_LOOKBACK_DAYS:
+        if date_from_enabled and not incremental:
             logging.warning(
-                f"Delta lookback (days) is set to {delta_lookback_days}. A delta fetch is a single "
-                f"un-paginated request, so the whole window must be returned in one response within "
-                f"the configured timeout of {timeout}s. Use the narrowest window that covers the "
-                f"changes this source reports late."
-            )
-
-        if lookback_enabled and not incremental:
-            logging.warning(
-                f"Delta lookback (days) is set to {delta_lookback_days}, but the load type is Full Load, "
-                f"so every run overwrites the destination table with just the fetched window. "
+                f"Date Start is set to '{date_from}', but the load type is Full Load, so every run "
+                f"overwrites the destination table with just the fetched window. "
                 f"Use Incremental Load to keep the previously fetched data."
             )
 
@@ -122,8 +120,8 @@ class Component(ComponentBase):
             else:
                 raise UserException(f"An error occurred while fetching resource: {e}")
 
-        if lookback_enabled and incremental:
-            self._check_lookback_has_primary_key(client, resource_alias, delta_lookback_days)
+        if date_from_enabled and incremental:
+            self._check_date_from_has_primary_key(client, resource_alias)
 
         files = os.listdir(temp_dir)
 
@@ -169,23 +167,21 @@ class Component(ComponentBase):
         return previous_delta_max
 
     @staticmethod
-    def _validate_delta_lookback_days(lookback_days: int) -> int:
-        """Validates the lookback window at the start of the run, before any branch can skip it."""
-        if isinstance(lookback_days, bool) or not isinstance(lookback_days, int):
-            raise UserException(f"Delta lookback (days) must be a whole number, got '{lookback_days}'.")
-
-        if not 0 <= lookback_days <= MAX_DELTA_LOOKBACK_DAYS:
+    def _validate_date_from(date_from: str) -> None:
+        """Fails fast on a Date Start that cannot be understood, before any fetch happens."""
+        try:
+            parse_datetime_interval(date_from, "now")
+        except (TypeError, ValueError) as e:
             raise UserException(
-                f"Delta lookback (days) must be between 0 and {MAX_DELTA_LOOKBACK_DAYS}, got {lookback_days}."
+                f"Could not understand Date Start '{date_from}'. Use an absolute date "
+                f"(for example 2026-01-01) or a relative one (for example '10 days ago'). ({e})"
             )
-
-        return lookback_days
 
     @staticmethod
     def _parse_delta_pointer(delta_pointer: Union[int, str], now: datetime) -> tuple[datetime, str] | None:
         """Parses a delta pointer as a timestamp.
 
-        Returns a (datetime, format) tuple, or None when the pointer is not a timestamp a lookback
+        Returns a (datetime, format) tuple, or None when the pointer is not a timestamp a Date Start
         window can be expressed in - a sequential id, for instance. The year range check keeps
         sequential ids that happen to parse as a date (10000101 -> year 1000) out of the timestamp
         branch, where they would be silently corrupted.
@@ -207,45 +203,52 @@ class Component(ComponentBase):
         return parsed, date_format
 
     @classmethod
-    def _apply_delta_lookback(
-        cls, delta_pointer: Union[int, str], lookback_days: int, now: datetime | None = None
-    ) -> Union[int, str]:
-        """Moves the delta pointer sent to SAP back to `now - lookback_days`.
+    def _apply_date_from(cls, delta_pointer: Union[int, str], date_from: str) -> Union[int, str]:
+        """Moves the delta pointer sent to SAP back to the Date Start, rendered in the source's format.
 
-        The pointer returned is never newer than the stored one, so the window fetched is always a
-        superset of what the run would fetch without the lookback: a schedule that is behind still
-        resumes from where it left off instead of skipping the gap.
+        `date_from` is a relative ("10 days ago") or absolute ("2026-01-01") date, always resolved
+        against the current time - the window has no upper bound, it runs to now. The pointer
+        returned is never newer than the stored one (min), so the window fetched is always a
+        superset of what the run would fetch without it: a schedule that is behind still resumes
+        from where it left off instead of skipping the gap.
         """
-        now = now or datetime.now()
-        parsed = cls._parse_delta_pointer(delta_pointer, now)
+        start_dt, now_dt = parse_datetime_interval(date_from, "now")
+        parsed = cls._parse_delta_pointer(delta_pointer, now_dt)
 
         if parsed is None:
             raise UserException(
-                f"Delta lookback (days) is set to {lookback_days}, but the delta pointer stored for this "
-                f"source ({delta_pointer}) is not a timestamp. Only YYYYMMDD and YYYYMMDDHHMMSS delta "
-                f"pointers can be shifted; set Delta lookback (days) to 0 for this source."
+                f"Date Start is set to '{date_from}', but the delta pointer stored for this source "
+                f"({delta_pointer}) is not a timestamp. Date Start only works when the source's delta "
+                f"pointer is a YYYYMMDD or YYYYMMDDHHMMSS timestamp; clear Date Start for this source."
             )
 
         stored_datetime, date_format = parsed
-        shifted = min(stored_datetime, now - timedelta(days=lookback_days))
+        shifted = min(stored_datetime, start_dt)
         new_pointer = shifted.strftime(date_format)
+
+        if (now_dt - shifted).days > WIDE_WINDOW_DAYS:
+            logging.warning(
+                f"Date Start '{date_from}' fetches roughly {(now_dt - shifted).days} days in one "
+                f"un-paginated request, which must return in a single response within the configured "
+                f"timeout. Use the narrowest window that covers the changes this source reports late."
+            )
 
         if shifted == stored_datetime:
             logging.info(
-                f"The stored delta pointer {delta_pointer} is already older than the {lookback_days} "
-                f"day(s) lookback window, so it is used unchanged and no data is skipped."
+                f"The stored delta pointer {delta_pointer} is already older than Date Start "
+                f"'{date_from}', so it is used unchanged and no data is skipped."
             )
         else:
             logging.info(
-                f"Delta lookback of {lookback_days} day(s) moved the delta pointer sent to SAP "
+                f"Date Start '{date_from}' moved the delta pointer sent to SAP "
                 f"from {delta_pointer} to {new_pointer}."
             )
 
         return int(new_pointer) if isinstance(delta_pointer, int) else new_pointer
 
     @staticmethod
-    def _check_lookback_has_primary_key(client: SAPClient, resource_alias: str, lookback_days: int) -> None:
-        """Refuses a lookback window that would append the re-fetched rows as duplicates.
+    def _check_date_from_has_primary_key(client: SAPClient, resource_alias: str) -> None:
+        """Refuses a Date Start window that would append the re-fetched rows as duplicates.
 
         Checked against the column metadata rather than the written table so that the outcome
         depends only on the configuration and the source, not on whether this particular run
@@ -261,10 +264,9 @@ class Component(ComponentBase):
         )
 
         raise UserException(
-            f"Delta lookback (days) is set to {lookback_days}, but {reason} for resource "
-            f"{resource_alias}. Without a primary key the re-fetched rows would be appended to the "
-            f"destination table instead of updated, creating duplicates on every run. "
-            f"Set Delta lookback (days) to 0 for this source."
+            f"Date Start is set, but {reason} for resource {resource_alias}. Without a primary key "
+            f"the re-fetched rows would be appended to the destination table instead of updated, "
+            f"creating duplicates on every run. Clear Date Start for this source."
         )
 
     @staticmethod
@@ -273,10 +275,10 @@ class Component(ComponentBase):
     ) -> Union[int, str, None]:
         """The delta pointer written back to state, floored by the one the run started from.
 
-        A lookback shifts the pointer sent to SAP, and the client seeds its own maximum with that
-        shifted value. Without this floor a run that returns no delta pointer of its own (nothing
-        changed since the last run) would persist the shifted value, and the next run would shift
-        that again - walking the window backwards a little further every run.
+        Date Start moves the pointer sent to SAP back, and the client seeds its own maximum with
+        that moved value. Without this floor a run that returns no delta pointer of its own (nothing
+        changed since the last run) would persist the moved value, and the window would then creep
+        wider every run.
         """
         candidates = [value for value in (max_delta_pointer, stored_delta_max) if value]
 

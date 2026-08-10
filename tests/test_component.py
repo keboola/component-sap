@@ -9,13 +9,16 @@ import tempfile
 import unittest
 import mock
 import os
-from datetime import datetime
 from freezegun import freeze_time
 
 from keboola.component.exceptions import UserException
 
 from component import Component
 from sap_client.client import SAPClient
+
+# Chosen at midday so the local-timezone shift dateparser applies to relative dates
+# ("10 days ago") never crosses a day boundary, keeping date-level assertions stable in any timezone.
+FROZEN_NOW = "2026-08-06 12:00:00"
 
 
 class TestComponent(unittest.TestCase):
@@ -30,79 +33,74 @@ class TestComponent(unittest.TestCase):
             comp.run()
 
 
-class TestDeltaLookback(unittest.TestCase):
-    """Covers `source.delta_lookback_days` (SUPPORT-17281).
+@freeze_time(FROZEN_NOW)
+class TestDateFrom(unittest.TestCase):
+    """Covers `source.date_from` - the Date Start window (SUPPORT-17281).
 
-    NOW is the run time; STORED is a pointer the previous run left behind, one day old.
+    STORED is a 14-digit pointer a previous run left behind, one day before the frozen now.
     """
 
-    NOW = datetime(2026, 8, 6, 2, 16, 26)
     STORED = 20260805021626
-
-    def _shift(self, pointer, lookback_days, now=None):
-        return Component._apply_delta_lookback(pointer, lookback_days, now or self.NOW)
 
     # --- the pointer sent to SAP ------------------------------------------------
 
-    def test_sent_pointer_is_now_minus_lookback(self):
-        """The customer's ask: 10 days back from today, not from the stored pointer."""
-        self.assertEqual(20260727021626, self._shift(self.STORED, 10))
+    def test_absolute_date_from_moves_pointer_back(self):
+        """The customer's ask: fetch from a chosen date, not from the stored pointer."""
+        self.assertEqual(20260727021626, Component._apply_date_from(self.STORED, "2026-07-27 02:16:26"))
 
-    def test_sent_pointer_falls_back_to_stored_when_schedule_is_behind(self):
-        """A run that is behind must resume from the stored pointer, never skip the gap."""
+    def test_relative_date_from_is_now_minus_window(self):
+        """`10 days ago` from the frozen now (Aug 6) is Jul 27; assert the date, not the tz-shifted time."""
+        sent = Component._apply_date_from(self.STORED, "10 days ago")
+        self.assertEqual(20260727, sent // 1_000_000)
+        self.assertLessEqual(sent, self.STORED)
+
+    def test_date_from_falls_back_to_stored_when_schedule_is_behind(self):
+        """A run whose stored pointer is already older than Date Start must not skip the gap."""
         stored = 20260601000000
-        self.assertEqual(stored, self._shift(stored, 10))
-
-    def test_sent_pointer_is_never_newer_than_stored(self):
-        for lookback_days in (1, 5, 10, 365):
-            with self.subTest(lookback_days=lookback_days):
-                self.assertLessEqual(self._shift(self.STORED, lookback_days), self.STORED)
+        self.assertEqual(stored, Component._apply_date_from(stored, "2026-07-27"))
 
     def test_date_only_pointer_keeps_its_format(self):
-        self.assertEqual(20260727, self._shift(20260805, 10))
+        self.assertEqual(20260727, Component._apply_date_from(20260805, "2026-07-27"))
 
     def test_string_pointer_stays_a_string(self):
-        shifted = self._shift("20260805021626", 10)
-        self.assertEqual("20260727021626", shifted)
-        self.assertIsInstance(shifted, str)
+        sent = Component._apply_date_from("20260805021626", "2026-07-27")
+        self.assertEqual("20260727000000", sent)
+        self.assertIsInstance(sent, str)
 
-    def test_month_boundary(self):
-        now = datetime(2026, 3, 1)
-        self.assertEqual(20260228000000, self._shift(20260301000000, 1, now))
+    def test_sent_pointer_is_never_newer_than_stored(self):
+        for date_from in ("2026-07-27", "2026-08-01", "1 day ago", "2 weeks ago"):
+            with self.subTest(date_from=date_from):
+                self.assertLessEqual(Component._apply_date_from(self.STORED, date_from), self.STORED)
 
-    def test_leap_day(self):
-        now = datetime(2028, 3, 1)
-        self.assertEqual(20280229000000, self._shift(20280301000000, 1, now))
-
-    # --- pointers a lookback cannot be expressed on -----------------------------
+    # --- pointers a Date Start cannot be expressed on ---------------------------
 
     def test_sequential_id_pointer_raises(self):
         with self.assertRaises(UserException):
-            self._shift(12345, 10)
+            Component._apply_date_from(12345, "10 days ago")
 
     def test_date_like_sequential_id_raises_instead_of_being_corrupted(self):
-        """`10000101` parses as year 1000; shifting it would jump the id back by millions."""
+        """`10000101` parses as year 1000; treating it as a date would jump the id back by millions."""
         for pointer in (10000101, 12340101, 20260101021626000):
             with self.subTest(pointer=pointer):
                 with self.assertRaises(UserException):
-                    self._shift(pointer, 10)
+                    Component._apply_date_from(pointer, "10 days ago")
 
     def test_non_numeric_pointer_raises(self):
         with self.assertRaises(UserException):
-            self._shift("2026-08-05", 10)
+            Component._apply_date_from("2026-08-05", "10 days ago")
 
-    # --- validation --------------------------------------------------------------
+    # --- Date Start string validation --------------------------------------------
 
-    def test_invalid_lookback_values_raise(self):
-        for value in (-1, 366, 3650, True, "10"):
+    def test_unparseable_date_from_raises(self):
+        for value in ("garbage", "not a date", "next bluesday"):
             with self.subTest(value=value):
                 with self.assertRaises(UserException):
-                    Component._validate_delta_lookback_days(value)
+                    Component._validate_date_from(value)
 
-    def test_valid_lookback_values_accepted(self):
-        for value in (0, 10, 365):
+    def test_valid_date_from_accepted(self):
+        for value in ("2026-01-01", "10 days ago", "today", "2 weeks ago"):
             with self.subTest(value=value):
-                self.assertEqual(value, Component._validate_delta_lookback_days(value))
+                Component._validate_date_from(value)  # must not raise
 
     # --- what gets written back to state -----------------------------------------
 
@@ -110,14 +108,13 @@ class TestDeltaLookback(unittest.TestCase):
         """On a quiet run SAP returns no delta pointer, and the stored one must survive intact.
 
         The client seeds its own maximum with the pointer it was handed, so without the floor the
-        shifted pointer is what gets persisted: state drops back to the start of the lookback
-        window and stays there, and the window then widens by a day for every day that passes.
+        moved-back pointer is what gets persisted: state drops to the start of the window and stays
+        there, and the window then widens by a day for every day that passes.
         """
         stored = self.STORED
-        now = self.NOW
 
         for run in range(5):
-            sent = self._shift(stored, 10, now)
+            sent = Component._apply_date_from(stored, "10 days ago")
             # SAP reports nothing changed -> the client's max is the pointer it was given.
             persisted = Component._persisted_delta_pointer(sent, stored)
 
@@ -136,13 +133,12 @@ class TestDeltaLookback(unittest.TestCase):
         self.assertEqual(20260806021626, Component._persisted_delta_pointer(20260806021626, False))
         self.assertIsNone(Component._persisted_delta_pointer(None, False))
 
-    # --- unchanged behaviour when the option is not set ---------------------------
+    # --- unchanged behaviour when Date Start is not set ---------------------------
 
-    def test_unset_lookback_leaves_the_stored_pointer_untouched(self):
-        """With the option off, the pointer sent and the pointer persisted are both the stored one."""
-        state = {"ACC_DOC_HEADER": {"delta_max": self.STORED}}
+    def test_unset_date_from_leaves_the_stored_pointer_untouched(self):
+        """With Date Start empty, the pointer sent and the pointer persisted are both the stored one."""
         component = Component.__new__(Component)
-        component.state = state
+        component.state = {"ACC_DOC_HEADER": {"delta_max": self.STORED}}
 
         stored = component._init_delta("incremental_sync", "ACC_DOC_HEADER")
 
@@ -187,8 +183,9 @@ class FakeSapClient(SAPClient):
             self.delta_values.append(FakeSapClient.returned_pointer)
 
 
-class TestDeltaLookbackRun(unittest.TestCase):
-    """Drives the real `Component.run()` so the lookback wiring itself is covered, not just the helpers."""
+@freeze_time(FROZEN_NOW)
+class TestDateFromRun(unittest.TestCase):
+    """Drives the real `Component.run()` so the Date Start wiring itself is covered, not just the helpers."""
 
     ALIAS = "ACC_DOC_HEADER"
     STORED = 20260805021626
@@ -205,16 +202,18 @@ class TestDeltaLookbackRun(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.data_dir, ignore_errors=True)
 
-    def _write_config(self, delta_lookback_days=0, sync_type="incremental_sync", load_type="incremental_load"):
+    def _write_config(self, date_from="", sync_type="incremental_sync", load_type="incremental_load"):
+        source = {
+            "resource_alias": self.ALIAS,
+            "sync_type": sync_type,
+            "paging_method": "key",
+        }
+        if date_from:
+            source["date_from"] = date_from
         config = {
             "parameters": {
                 "authentication": {"server_url": "https://sap.example", "username": "u", "#password": "p"},
-                "source": {
-                    "resource_alias": self.ALIAS,
-                    "sync_type": sync_type,
-                    "paging_method": "key",
-                    "delta_lookback_days": delta_lookback_days,
-                },
+                "source": source,
                 "destination": {"output_table_name": "", "load_type": load_type},
             }
         }
@@ -234,14 +233,13 @@ class TestDeltaLookbackRun(unittest.TestCase):
             with mock.patch("component.SAPClient", FakeSapClient):
                 Component().run()
 
-    @freeze_time("2026-08-06 02:16:26")
-    def test_run_sends_lookback_pointer_but_persists_the_stored_one(self):
-        """The failure this guards against: a quiet run persisting the shifted pointer.
+    def test_run_sends_date_from_pointer_but_persists_the_stored_one(self):
+        """The failure this guards against: a quiet run persisting the moved-back pointer.
 
-        Without the floor at the state write, `delta_max` drops to the start of the lookback
-        window and the window silently widens from then on.
+        Without the floor at the state write, `delta_max` drops to the start of the window and the
+        window silently widens from then on.
         """
-        self._write_config(delta_lookback_days=10)
+        self._write_config(date_from="2026-07-27 02:16:26")
         self._write_state(self.STORED)
 
         self._run()
@@ -249,9 +247,8 @@ class TestDeltaLookbackRun(unittest.TestCase):
         self.assertEqual([20260727021626], FakeSapClient.sent_pointers)
         self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
 
-    @freeze_time("2026-08-06 02:16:26")
-    def test_run_without_lookback_is_unchanged(self):
-        self._write_config(delta_lookback_days=0)
+    def test_run_without_date_from_is_unchanged(self):
+        self._write_config(date_from="")
         self._write_state(self.STORED)
 
         self._run()
@@ -259,9 +256,8 @@ class TestDeltaLookbackRun(unittest.TestCase):
         self.assertEqual([self.STORED], FakeSapClient.sent_pointers)
         self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
 
-    @freeze_time("2026-08-06 02:16:26")
     def test_run_persists_a_newer_pointer_returned_by_sap(self):
-        self._write_config(delta_lookback_days=10)
+        self._write_config(date_from="2026-07-27")
         self._write_state(self.STORED)
         FakeSapClient.returned_pointer = 20260806021626
 
@@ -269,9 +265,8 @@ class TestDeltaLookbackRun(unittest.TestCase):
 
         self.assertEqual(20260806021626, self._read_state()[self.ALIAS]["delta_max"])
 
-    @freeze_time("2026-08-06 02:16:26")
-    def test_run_writes_the_table_with_lookback_enabled(self):
-        self._write_config(delta_lookback_days=10)
+    def test_run_writes_the_table_with_date_from(self):
+        self._write_config(date_from="2026-07-27")
         self._write_state(self.STORED)
         FakeSapClient.rows = [{"ACC_NUMBER": "1"}, {"ACC_NUMBER": "2"}]
 
@@ -282,18 +277,15 @@ class TestDeltaLookbackRun(unittest.TestCase):
         self.assertTrue(os.path.exists(table_path + ".manifest"))
         self.assertEqual(["ACC_NUMBER"], self._read_state()[self.ALIAS]["columns"])
 
-    @freeze_time("2026-08-06 02:16:26")
-    def test_run_fails_when_lookback_source_has_no_primary_key(self):
+    def test_run_fails_when_date_from_source_has_no_primary_key(self):
         """The guard must run before anything is written, and regardless of how many rows came back."""
-        FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
-
         for rows in ([], [{"ACC_NUMBER": "1"}]):
             with self.subTest(rows=len(rows)):
                 self.tearDown()
                 self.setUp()
                 FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
                 FakeSapClient.rows = rows
-                self._write_config(delta_lookback_days=10)
+                self._write_config(date_from="2026-07-27")
                 self._write_state(self.STORED)
 
                 with self.assertRaises(UserException):
@@ -304,10 +296,19 @@ class TestDeltaLookbackRun(unittest.TestCase):
                 self.assertFalse(os.path.exists(table_path + ".manifest"))
                 self.assertFalse(os.path.exists(os.path.join(self.data_dir, "out", "state.json")))
 
-    @freeze_time("2026-08-06 02:16:26")
-    def test_full_sync_row_with_a_leftover_lookback_value_is_unaffected(self):
+    def test_run_fails_fast_on_unparseable_date_from(self):
+        """A malformed Date Start fails before any fetch - no request is built."""
+        self._write_config(date_from="garbage")
+        self._write_state(self.STORED)
+
+        with self.assertRaises(UserException):
+            self._run()
+
+        self.assertEqual([], FakeSapClient.sent_pointers)
+
+    def test_full_sync_row_with_a_leftover_date_from_is_unaffected(self):
         """The field is hidden outside incremental sync, so a stale value must not fail the run."""
-        self._write_config(delta_lookback_days=10, sync_type="full_sync")
+        self._write_config(date_from="2026-07-27", sync_type="full_sync")
         self._write_state(self.STORED)
         FakeSapClient.metadata = {"ACC_NUMBER": {"TYPE": "CHAR", "LENGTH": 10}}
 
@@ -316,9 +317,8 @@ class TestDeltaLookbackRun(unittest.TestCase):
         self.assertEqual([None], FakeSapClient.sent_pointers)
         self.assertEqual(self.STORED, self._read_state()[self.ALIAS]["delta_max"])
 
-    @freeze_time("2026-08-06 02:16:26")
     def test_first_run_without_a_stored_pointer_full_syncs(self):
-        self._write_config(delta_lookback_days=10)
+        self._write_config(date_from="10 days ago")
 
         self._run()
 
