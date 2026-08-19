@@ -1,6 +1,6 @@
 keboola.component==1.4.3
 keboola.utils
-git+https://github.com/keboola/python-http-client.git@feature/async
+keboola.http-client>=1.2.0
 keboola.csvwriter
 mock
 freezegun
